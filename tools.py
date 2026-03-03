@@ -71,4 +71,4 @@ def grep_text(pattern: str, path: str = ".", max_matches: int = 50):
     return {"ok": True, "output": "\n".join(hits) if hits else "(no matches)"}
 
 
-TOOLS = {"read_file": read_file, "write_file": write_file, "run_cmd": run_cmd}
+TOOLS = {"read_file": read_file, "write_file": write_file, "run_cmd": run_cmd, "list_dir": list_dir}
