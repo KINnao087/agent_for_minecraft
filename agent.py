@@ -1,4 +1,4 @@
-import os, json, re, time
+import os, json, re, time, platform
 from tools import TOOLS
 from openai import OpenAI
 
@@ -10,7 +10,7 @@ client = OpenAI(
 
 MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-SYSTEM = """你是代码工具Agent。
+BASE_SYSTEM = """你是代码工具Agent。
 
 只允许两种输出：(最高优先级)
 1) <tool_call>{"name":"...","arguments":{...}}</tool_call>  (这个用来调用工具)
@@ -19,8 +19,9 @@ SYSTEM = """你是代码工具Agent。
 规则：
 - 你需要对用户的需求加以分析，然后决定是否调用工具还是直接回复用户。并不是所有需求都需要依据代码
 - 只要需要文件/目录/命令结果：立刻输出 tool_call，禁止解释/猜测。
-- 不确定内容先 read_file；修改后 write_file 写回完整文件；关键修改后 run_cmd 验证。
+- 不确定内容先 read_file；修改后 write_file 写回完整文件；关键修改后 run_cmd 验证。  假如是修改了用户的项目文件，最终告知用户修改位置（多少行到多少行）
 - 每轮最多调用一个工具；拿到结果再继续。
+- 当发现用户系统中有工具没有安装，提示用户是否安装，并将安装方法告知用户
 """
 
 # 工具定义（OpenAI tools schema，DeepSeek 兼容）
@@ -79,6 +80,23 @@ TOOL_DEFS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rg_search",
+            "description": "Search for text pattern using ripgrep (rg) tool",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "path": {"type": "string", "default": "."},
+                    "max_lines": {"type": "integer", "default": 200},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+
 ]
 
 CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
@@ -125,9 +143,51 @@ def deepseek_chat(messages):
     return resp.choices[0].message  # .content / .tool_calls
 
 
-def run_agent(task: str, max_steps: int = 8):
+def get_system_info():
+    """获取系统信息"""
+    system_info = {
+        "os": platform.system(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+    }
+    
+    # 检测是否是WSL
+    try:
+        with open("/proc/version", "r") as f:
+            proc_version = f.read()
+            if "microsoft" in proc_version.lower():
+                system_info["is_wsl"] = True
+                system_info["wsl_version"] = "WSL2" if "WSL2" in proc_version else "WSL1"
+            else:
+                system_info["is_wsl"] = False
+    except:
+        system_info["is_wsl"] = False
+    
+    # 格式化系统信息字符串
+    info_lines = []
+    info_lines.append(f"操作系统: {system_info['os']}")
+    info_lines.append(f"系统版本: {system_info['release']}")
+    info_lines.append(f"平台架构: {system_info['machine']}")
+    info_lines.append(f"处理器: {system_info['processor']}")
+    info_lines.append(f"Python版本: {system_info['python_version']}")
+    
+    if system_info.get('is_wsl'):
+        info_lines.append(f"运行环境: {system_info['wsl_version']} (Windows Subsystem for Linux)")
+    
+    return "\n".join(info_lines)
+
+
+def run_agent(task: str, max_steps: int = 18):
+    # 获取系统信息并构建完整的系统提示
+    system_info = get_system_info()
+    full_system = BASE_SYSTEM + f"\n\n当前工作目录是：{os.getcwd()}\n\n系统信息：\n{system_info}"
+    
     messages = [
-        {"role": "system", "content": SYSTEM + f"\n\n当前工作目录是：{os.getcwd()}"},
+        {"role": "system", "content": full_system},
         {"role": "user", "content": task},
     ]
 
