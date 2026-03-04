@@ -1,13 +1,18 @@
-import os, json, requests, re
-
+import os, json, re, time
 from tools import TOOLS
+from openai import OpenAI
 
-OLLAMA = os.getenv("OLLAMA", "http://127.0.0.1:11434")
-MODEL = os.getenv("OLLAMA_MODEL", "huihui_ai/qwen3-vl-abliterated:8b")
+# ===== DeepSeek(OpenAI-compatible) client =====
+client = OpenAI(
+    api_key=os.environ.get("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com",
+)
+
+MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 SYSTEM = """你是代码工具Agent。
 
-只允许两种输出：
+只允许两种输出：(最高优先级)
 1) <tool_call>{"name":"...","arguments":{...}}</tool_call>
 2) <final>...</final>
 
@@ -15,10 +20,9 @@ SYSTEM = """你是代码工具Agent。
 - 只要需要文件/目录/命令结果：立刻输出 tool_call，禁止解释/猜测。
 - 不确定内容先 read_file；修改后 write_file 写回完整文件；关键修改后 run_cmd 验证。
 - 每轮最多调用一个工具；拿到结果再继续。
-- 当思考超过5秒强制停止（最高优先级）
 """
 
-# 工具“说明书”：发给模型看，让它知道有哪些工具、每个工具要什么参数
+# 工具定义（OpenAI tools schema，DeepSeek 兼容）
 TOOL_DEFS = [
     {
         "type": "function",
@@ -29,11 +33,11 @@ TOOL_DEFS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "max_bytes": {"type": "integer", "default": 120000}
+                    "max_bytes": {"type": "integer", "default": 20000},  # 建议先别喂太大
                 },
-                "required": ["path"]
+                "required": ["path"],
             },
-        }
+        },
     },
     {
         "type": "function",
@@ -42,13 +46,10 @@ TOOL_DEFS = [
             "description": "Write full content to a text file in the project",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "content": {"type": "string"}
-                },
-                "required": ["path", "content"]
+                "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                "required": ["path", "content"],
             },
-        }
+        },
     },
     {
         "type": "function",
@@ -59,13 +60,13 @@ TOOL_DEFS = [
                 "type": "object",
                 "properties": {
                     "cmd": {"type": "string"},
-                    "timeout_sec": {"type": "integer", "default": 60}
+                    "timeout_sec": {"type": "integer", "default": 60},
                 },
-                "required": ["cmd"]
+                "required": ["cmd"],
             },
-        }
+        },
     },
-{
+    {
         "type": "function",
         "function": {
             "name": "list_dir",
@@ -73,28 +74,15 @@ TOOL_DEFS = [
             "parameters": {
                 "type": "object",
                 "properties": {"path": {"type": "string", "default": "."}},
-                "required": []
+                "required": [],
             },
-        }
+        },
     },
 ]
 
-def ollama_chat(messages):
-    """调用 Ollama 的 /api/chat 接口，返回模型的 message（可能包含 tool_calls 或 content）。"""
-    url = f"{OLLAMA}/api/chat"
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "stream": False,
-        "options": {"temperature": 0.2},
-        "tools": TOOL_DEFS,
-    }
-    r = requests.post(url, json=payload, timeout=120)
-    r.raise_for_status()
-    return r.json()["message"]  # {"role": "...", "content": "...", "tool_calls": [...]}
-
-CALL_RE  = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
+CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
 FINAL_RE = re.compile(r"<final>\s*(.*?)\s*</final>", re.S)
+
 
 def parse_tool_call(content: str):
     m = CALL_RE.search(content or "")
@@ -103,60 +91,75 @@ def parse_tool_call(content: str):
     obj = json.loads(m.group(1))
     return obj["name"], obj.get("arguments", {})
 
+
 def parse_final(content: str):
     m = FINAL_RE.search(content or "")
     return m.group(1) if m else None
 
-def new_session(user_text: str):
-    #新对话
-    return [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": user_text},
-    ]
 
-def trim_messages(messages, keep_last=12):
-    #调整信息
-    sys = None
+def trim_messages(messages, keep_last=20):
+    # 永远保留第一条 system，其余保留最近 keep_last 条
+    sys_msg = None
     rest = []
     for m in messages:
-        if m.get("role") == "system" and sys is None:
-            sys = m
+        if m.get("role") == "system" and sys_msg is None:
+            sys_msg = m
         else:
             rest.append(m)
-    return ([sys] if sys else []) + rest[-keep_last:]
+    return ([sys_msg] if sys_msg else []) + rest[-keep_last:]
 
-# import xml.etree.ElementTree as ET
-# def print_xml(xml_msg: str):
-#     final = ET.fromstring(xml_msg)
-#     print(final.text.strip())
 
-import time
+def deepseek_chat(messages):
+    """
+    返回 assistant message（兼容 tool_calls / content）
+    """
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        tools=TOOL_DEFS,
+        tool_choice="auto",
+        temperature=0.2,
+        stream=False,
+    )
+    return resp.choices[0].message  # .content / .tool_calls
+
+
 def run_agent(task: str, max_steps: int = 8):
-    """Agent 主循环：模型要工具→你执行→回喂→继续。"""
     messages = [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": SYSTEM + f"\n\n当前工作目录是：{os.getcwd()}"},
         {"role": "user", "content": task},
     ]
+
     t0 = time.perf_counter()
 
     for step in range(1, max_steps + 1):
+        msg = deepseek_chat(messages)
 
-        msg = ollama_chat(messages)
-
-        content = (msg.get("content") or "").strip()
-
-        # print(msg)
-
-        # 1) 标准 tool_calls 格式
-        tool_calls = msg.get("tool_calls") or []
+        # ===== 1) SDK tool_calls =====
+        tool_calls = getattr(msg, "tool_calls", None) or []
         if tool_calls:
-            print(f"tool_calls: {msg.get('tool_calls')}")
+            # 记录 assistant 的 tool_call 意图
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                }
+            )
 
-            messages.append(msg)  # 把“我要调用工具”的意图也记进历史
-
-            tc = tool_calls[0]  # 我们要求每次最多一个工具
-            name = tc["function"]["name"]
-            args = tc["function"].get("arguments") or {}
+            tc = tool_calls[0]  # 你要求每轮最多一个
+            name = tc.function.name
+            args = tc.function.arguments or "{}"
             if isinstance(args, str):
                 args = json.loads(args)
 
@@ -164,24 +167,53 @@ def run_agent(task: str, max_steps: int = 8):
                 result = {"ok": False, "output": f"unknown tool: {name}"}
             else:
                 result = TOOLS[name](**args)
-            print(f"tool: {name} result: {result.get('ok')}")
-            messages.append({
-                "role": "tool",
-                "name": name,
-                "content": json.dumps(result, ensure_ascii=False),
-            })
-            messages = trim_messages(messages, keep_last=12)
+
+            # 你本地看日志可以，但别指望模型看 print
+            print(f"[tool] {name} ok={result.get('ok')} output: {result.get('output', '')}")
+
+            # ===== 关键：把工具结果喂回模型 =====
+            # 更稳：直接喂 output（不要再包一层 JSON，尤其 output 很长时）
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,  # 很重要：对应到这次 tool call
+                    "name": name,
+                    "content": result.get("output", ""),
+                }
+            )
+
+            messages = trim_messages(messages, keep_last=30)
             continue
 
-        # 2) 普通输出
-        dt = time.perf_counter() - t0
+        # ===== 2) 普通输出 =====
+        content = (msg.content or "").strip()
         messages.append({"role": "assistant", "content": content})
+
+        dt = time.perf_counter() - t0
         print(f"[Step {step}] {content if content else '(empty)'}  tot time: {dt:.3f}s\n")
 
-        # 简单停机：模型说“完成/结束”
-        if "<final>" in content or "</final>" in content:
+        # 看到 <final> 就停
+        if parse_final(content) is not None or ("<final>" in content and "</final>" in content):
             break
 
+        # 如果模型没用 tool_calls 机制而是走你自定义 <tool_call> 标签，也能兜底
+        maybe = parse_tool_call(content)
+        if maybe:
+            name, args = maybe
+            if name not in TOOLS:
+                result = {"ok": False, "output": f"unknown tool: {name}"}
+            else:
+                result = TOOLS[name](**args)
+
+            print(f"[tool(tag)] {name} ok={result.get('ok')}")
+            messages.append({"role": "tool", "name": name, "content": result.get("output", "")})
+            messages = trim_messages(messages, keep_last=30)
+            continue
+
+# ....
 if __name__ == "__main__":
-    # Windows: 用 dir；Linux/mac: 用 ls
-    run_agent("调用 list_dir 列出当前目录。然后用一句话告诉我有哪些文件。")
+    while True:
+        query = str(input("> ").strip())
+        if not query:
+            continue
+        run_agent(query)

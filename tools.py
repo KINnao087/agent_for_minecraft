@@ -2,7 +2,7 @@ import os, subprocess
 
 WORKDIR = os.getcwd()
 
-def read_file(path: str, max_bytes: int = 120_000):
+def read_file(path: str, max_bytes: int = 120_000_00):
     p = _safe(path)
     with open(p, "rb") as f:
         data = f.read(max_bytes + 1)
