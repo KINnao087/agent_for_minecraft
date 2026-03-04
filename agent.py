@@ -15,6 +15,7 @@ SYSTEM = """你是代码工具Agent。
 - 只要需要文件/目录/命令结果：立刻输出 tool_call，禁止解释/猜测。
 - 不确定内容先 read_file；修改后 write_file 写回完整文件；关键修改后 run_cmd 验证。
 - 每轮最多调用一个工具；拿到结果再继续。
+- 当思考超过5秒强制停止（最高优先级）
 """
 
 # 工具“说明书”：发给模型看，让它知道有哪些工具、每个工具要什么参数
@@ -106,6 +107,24 @@ def parse_final(content: str):
     m = FINAL_RE.search(content or "")
     return m.group(1) if m else None
 
+def new_session(user_text: str):
+    #新对话
+    return [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": user_text},
+    ]
+
+def trim_messages(messages, keep_last=12):
+    #调整信息
+    sys = None
+    rest = []
+    for m in messages:
+        if m.get("role") == "system" and sys is None:
+            sys = m
+        else:
+            rest.append(m)
+    return ([sys] if sys else []) + rest[-keep_last:]
+
 # import xml.etree.ElementTree as ET
 # def print_xml(xml_msg: str):
 #     final = ET.fromstring(xml_msg)
@@ -151,6 +170,7 @@ def run_agent(task: str, max_steps: int = 8):
                 "name": name,
                 "content": json.dumps(result, ensure_ascii=False),
             })
+            messages = trim_messages(messages, keep_last=12)
             continue
 
         # 2) 普通输出
