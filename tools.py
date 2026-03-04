@@ -23,12 +23,17 @@ def run_cmd(cmd: str, timeout_sec: int = 60):
     out = (proc.stdout or "") + (proc.stderr or "")
     return {"ok": proc.returncode == 0, "output": out.strip()}
 
-def _safe(path: str) -> str:
+def _safe(query: str, path: str = '.', max_lines: int = 200) -> str:
     """把相对路径转成绝对路径，并阻止路径穿越（例如 ../../windows/system32）。"""
     p = os.path.abspath(os.path.join(WORKDIR, path))
     if not p.startswith(WORKDIR):
         raise ValueError("Path escapes workdir")
     return p
+
+
+def rg_search(path: str):
+    return run_cmd(f"rg {path}")
+
 
 def list_dir(path: str = "."):
     """列出某个目录下的文件/文件夹（返回按字母排序的列表）。"""
