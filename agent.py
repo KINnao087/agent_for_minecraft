@@ -20,6 +20,7 @@ client = OpenAI(
 
 MODEL = CONFIG["model"]
 BASE_SYSTEM = CONFIG["base_system"]
+KEEP_LAST = CONFIG["keep_last"]
 TOOL_DEFS = CONFIG["tool_defs"]
 
 CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
@@ -177,19 +178,33 @@ def sanitize_text(s):
     # 把 surrogate / 非法字符替换掉，确保能 utf-8 编码
     return s.encode("utf-8", "replace").decode("utf-8")
 
-def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = True):
-    logger = get_logger()
-    system_info = get_system_info()
-    full_system = BASE_SYSTEM + f"\n\n当前工作目录：{os.getcwd()}\n\n系统信息：\n{system_info}"
+def handle_tool_call(tc, name, args, messages):
+    if isinstance(args, str):
+        args = json.loads(args)
 
-    messages = [
-        {"role": "system", "content": full_system},
-        {"role": "user", "content": task},
-    ]
+    if name not in TOOLS:
+        result = {"ok": False, "output": f"unknown tool: {name}"}
+        logger.error("未知工具: {}", name)
+    else:
+        logger.info("调用工具: {}", name)
+        result = TOOLS[name](**args)
 
-    t0 = time.perf_counter()
-    logger.info("开始处理任务: {}", task)
+    if result.get("ok"):
+        logger.info("工具 {} 执行成功", name)
+    else:
+        logger.error("工具 {} 执行失败: {}", name, result.get("output", ""))
 
+    messages.append(
+        {
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "name": name,
+            "content": result.get("output", ""),
+        }
+    )
+    messages = trim_messages(messages, keep_last=KEEP_LAST)
+
+def main_loop(max_steps, enable_thinking_stream, messages):
     for step in range(1, max_steps + 1):
         thinking_callback = (lambda chunk: None) if enable_thinking_stream else None
         msg = deepseek_chat(messages, thinking_callback)
@@ -217,43 +232,17 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
             tc = tool_calls[0]
             name = tc.function.name
             args = tc.function.arguments or "{}"
-            if isinstance(args, str):
-                args = json.loads(args)
-
-            if name not in TOOLS:
-                result = {"ok": False, "output": f"unknown tool: {name}"}
-                logger.error("未知工具: {}", name)
-            else:
-                logger.info("调用工具: {}", name)
-                result = TOOLS[name](**args)
-
-            if result.get("ok"):
-                logger.info("工具 {} 执行成功", name)
-            else:
-                logger.error("工具 {} 执行失败: {}", name, result.get("output", ""))
-
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "name": name,
-                    "content": result.get("output", ""),
-                }
-            )
-            messages = trim_messages(messages, keep_last=30)
+            handle_tool_call(tc, name, args, messages)
             continue
 
         content = (getattr(msg, "content", None) or "").strip()
         messages.append({"role": "assistant", "content": content})
 
-        dt = time.perf_counter() - t0
-        logger.info("[Step {}] {}  tot time: {:.3f}s", step, content if content else "(empty)", dt)
-
         final_text = parse_final(content)
         if final_text is not None:
             logger.info("任务完成，收到最终回复")
             print(final_text)
-            break
+            return step, content
 
         maybe = parse_tool_call(content)
         if maybe:
@@ -271,16 +260,36 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
                 logger.error("工具 {} 执行失败(标签): {}", name, result.get("output", ""))
 
             messages.append({"role": "tool", "name": name, "content": result.get("output", "")})
-            messages = trim_messages(messages, keep_last=30)
+            messages = trim_messages(messages, keep_last=KEEP_LAST)
             continue
 
         if content:
             print(content)
-            break
+            return step, content
 
         logger.warning("模型未返回可用内容，结束本轮任务")
-        break
+        return step, content
 
+    # 如果循环正常结束（达到最大步数）
+    return max_steps, ""
+
+def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = True):
+    logger = get_logger()
+    system_info = get_system_info()
+    full_system = BASE_SYSTEM + f"\n\n当前工作目录：{os.getcwd()}\n\n系统信息：\n{system_info}"
+
+    messages = [
+        {"role": "system", "content": full_system},
+        {"role": "user", "content": task},
+    ]
+
+    t0 = time.perf_counter()
+    logger.info("开始处理任务: {}", task)
+
+    step, content = main_loop(max_steps, enable_thinking_stream, messages)
+
+    dt = time.perf_counter() - t0
+    logger.info("[Step {}] {}  tot time: {:.3f}s", step, content if content else "(empty)", dt)
     total_time = time.perf_counter() - t0
     logger.info("任务处理完成，总耗时: {:.3f}s", total_time)
 
