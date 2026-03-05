@@ -7,121 +7,20 @@ from types import SimpleNamespace
 
 from openai import OpenAI
 
+from config.config import load_config
 from log import end_thinking_stream, get_logger, start_thinking_stream, stream_thinking
 from tools import TOOLS
+
+CONFIG = load_config()
 
 client = OpenAI(
     api_key=os.environ.get("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
 )
 
-MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-
-BASE_SYSTEM = """你是代码工具 Agent。
-只允许两种输出：
-1. <tool_call>{"name":"...","arguments":{...}}</tool_call>
-2. <final>...</final>
-
-规则：
-- 先判断是否真的需要工具，不是所有问题都需要使用工具。
-- 只要需要文件、目录或命令结果，就先调用工具，不要猜。
-- 不确定内容时优先 rg_search，再使用read_file_lines，最终若还是没有结果或者需要更多信息则使用read_file
-- 修改后用 write_file 回写完整文件，关键修改后用 run_cmd 验证。
-- 每轮最多调用一个工具，拿到结果后再继续。
-- 若发现xx命令不是外部命令之类的，提示用户安装相关命令插件，并告知用户在当前环境下如何安装
-"""
-
-TOOL_DEFS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Read a text file from the project",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "max_bytes": {"type": "integer", "default": 20000},
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": "Write full content to a text file in the project",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "content": {"type": "string"},
-                },
-                "required": ["path", "content"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_cmd",
-            "description": "Run a shell command in the project directory",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "cmd": {"type": "string"},
-                    "timeout_sec": {"type": "integer", "default": 60},
-                },
-                "required": ["cmd"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_dir",
-            "description": "List directory entries under a path",
-            "parameters": {
-                "type": "object",
-                "properties": {"path": {"type": "string", "default": "."}},
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "rg_search",
-            "description": "Search for text pattern using ripgrep (rg) tool",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "path": {"type": "string", "default": "."},
-                    "max_lines": {"type": "integer", "default": 200},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file_lines",
-            "description": "Read specific lines from a text file",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "start_line": {"type": "integer", "default": 0},
-                    "max_lines": {"type": "integer", "default": 200},
-                },
-                "required": ["path"],
-            },
-        },
-    },
-]
+MODEL = CONFIG["model"]
+BASE_SYSTEM = CONFIG["base_system"]
+TOOL_DEFS = CONFIG["tool_defs"]
 
 CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
 FINAL_RE = re.compile(r"<final>\s*(.*?)\s*</final>", re.S)

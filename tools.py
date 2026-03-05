@@ -1,6 +1,9 @@
-import os
+import os, platform
+import shutil
 import subprocess
+from pathlib import Path
 from typing import Any, Callable, Dict
+
 from log import get_logger
 
 WORKDIR = os.getcwd()
@@ -166,6 +169,109 @@ def read_file_lines(path: str, start_line: int = 0, max_lines: int = 200):
     except Exception as e:
         return _err("read_file_lines", e, path=path, start_line=start_line, max_lines=max_lines)
 
+def copy_file(src: str, dst: str, overwrite: bool = False):
+    src_p = Path(src)
+    dst_p = Path(dst)
+
+    if not src_p.exists():
+        return {"ok": False, "error": f"src not found: {src}"}
+
+    if (dst_p.exists() and dst_p.is_dir()):
+        dst_p = dst_p / src_p.name
+
+    # 处理 overwrite
+    if dst_p.exists():
+        if not overwrite:
+            return {"ok": False, "error": f"dst already exists: {str(dst_p)}"}
+        # overwrite=True: 先删除目标
+        if dst_p.is_dir():
+            shutil.rmtree(dst_p)
+        else:
+            dst_p.unlink()
+
+    try:
+        if src_p.is_dir():
+            # Python 3.8+：dirs_exist_ok 允许覆盖，但我们前面已经清理了
+            shutil.copytree(src_p, dst_p)
+        else:
+            # copy2 会尽量保留时间戳等元数据
+            dst_p.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_p, dst_p)
+
+        return {"ok": True, "dst": str(dst_p)}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
+def move_file(src: str, dst: str, overwrite: bool = False):
+    src_p = Path(src)
+    dst_p = Path(dst)
+
+    if not src_p.exists():
+        return {"ok": False, "error": f"src not found: {src}"}
+
+    if (dst_p.exists() and dst_p.is_dir()):
+        dst_p = dst_p / src_p.name
+
+    # 处理 overwrite
+    if dst_p.exists():
+        if not overwrite:
+            return {"ok": False, "error": f"dst already exists: {str(dst_p)}"}
+        # overwrite=True: 先删除目标
+        if dst_p.is_dir():
+            shutil.rmtree(dst_p)
+        else:
+            dst_p.unlink()
+
+    try:
+        # 移动文件或目录
+        if src_p.is_dir():
+            # 对于目录，使用shutil.move
+            shutil.move(str(src_p), str(dst_p))
+        else:
+            # 对于文件，确保目标目录存在
+            dst_p.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src_p), str(dst_p))
+
+        return {"ok": True, "dst": str(dst_p)}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
+def delete_file(path: str):
+    """删除文件或目录"""
+    try:
+        path_p = Path(path)
+        
+        if not path_p.exists():
+            return {"ok": False, "error": f"path not found: {path}"}
+        
+        logger.debug("删除文件/目录: {}", path)
+        
+        if path_p.is_dir():
+            shutil.rmtree(path_p)
+            logger.info("成功删除目录: {}", path)
+        else:
+            path_p.unlink()
+            logger.info("成功删除文件: {}", path)
+        
+        return {"ok": True, "output": f"deleted {path}"}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
+def mkdir_p(path: str):
+    """创建目录，如果父目录不存在也会创建（类似 mkdir -p）"""
+    try:
+        path_p = Path(path)
+        
+        logger.debug("创建目录: {}", path)
+        
+        # 使用mkdir创建目录，parents=True表示创建父目录，exist_ok=True表示如果目录已存在也不报错
+        path_p.mkdir(parents=True, exist_ok=True)
+        
+        logger.info("成功创建目录: {}", path)
+        return {"ok": True, "output": f"created directory {path}"}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
 def list_dir(path: str = "."):
     """列出某个目录下的文件/文件夹（返回按字母排序的列表）。"""
     try:
@@ -226,4 +332,8 @@ TOOLS = {
     "rg_search": rg_search,
     "grep_text": grep_text,
     "read_file_lines": read_file_lines,
+    "copy_file": copy_file,
+    "move_file": move_file,
+    "delete_file": delete_file,
+    "mkdir_p": mkdir_p,
 }
