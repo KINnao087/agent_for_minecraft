@@ -1,14 +1,20 @@
 import os
 import subprocess
 from typing import Any, Callable, Dict
+from log import get_logger
 
 WORKDIR = os.getcwd()
+logger = get_logger("tools")
 
 def _err(tool: str, e: Exception, **extra) -> Dict[str, Any]:
     # 统一错误返回结构：不抛异常，返回给 agent
     msg = f"{type(e).__name__}: {e}"
     if extra:
         msg += " | " + ", ".join(f"{k}={v!r}" for k, v in extra.items())
+    
+    # 记录错误日志
+    logger.error("工具 {} 执行出错: {}", tool, msg)
+    
     return {"ok": False, "output": f"[{tool}] {msg}"}
 
 def _sanitize_text(s: Any) -> str:
@@ -28,18 +34,26 @@ def _safe(path: str, base: str = WORKDIR) -> str:
             raise ValueError("Path escapes workdir")
         return p
     except Exception as e:
-        # 让调用者拿到统一错误（调用者会 catch）
+        # 记录安全错误
+        logger.error("路径安全检查失败: {}, base={}", str(e), base)
         raise
 
 def read_file(path: str, max_bytes: int = 120_000):
     try:
         p = _safe(path)
+        logger.debug("读取文件: {}, 最大字节数: {}", path, max_bytes)
+        
         with open(p, "rb") as f:
             data = f.read(max_bytes + 1)
+        
         if len(data) > max_bytes:
+            logger.warning("文件过大: {} > {}", len(data), max_bytes)
             return {"ok": False, "output": f"too large >{max_bytes}"}
+        
         text = data.decode("utf-8", errors="replace")
         text = _sanitize_text(text)
+        
+        logger.info("成功读取文件: {}, 大小: {} 字节", path, len(data))
         return {"ok": True, "output": text}
     except Exception as e:
         return _err("read_file", e, path=path, max_bytes=max_bytes)
@@ -47,16 +61,23 @@ def read_file(path: str, max_bytes: int = 120_000):
 def write_file(path: str, content: str):
     try:
         p = _safe(path)
+        logger.debug("写入文件: {}, 内容长度: {}", path, len(content))
+        
         os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
         content = _sanitize_text(content)
+        
         with open(p, "w", encoding="utf-8", errors="replace") as f:
             f.write(content)
+        
+        logger.info("成功写入文件: {}, 大小: {} 字符", path, len(content))
         return {"ok": True, "output": f"wrote {len(content)} chars to {path}"}
     except Exception as e:
         return _err("write_file", e, path=path)
 
 def run_cmd(cmd: str, timeout_sec: int = 60):
     try:
+        logger.debug("执行命令: {}, 超时: {} 秒", cmd, timeout_sec)
+        
         proc = subprocess.run(
             cmd,
             shell=True,
@@ -65,10 +86,18 @@ def run_cmd(cmd: str, timeout_sec: int = 60):
             text=True,
             timeout=timeout_sec,
         )
+        
         out = (proc.stdout or "") + (proc.stderr or "")
         out = _sanitize_text(out.strip())
+        
+        if proc.returncode == 0:
+            logger.info("命令执行成功: {}, 返回码: {}", cmd, proc.returncode)
+        else:
+            logger.warning("命令执行失败: {}, 返回码: {}", cmd, proc.returncode)
+        
         return {"ok": proc.returncode == 0, "output": out}
     except subprocess.TimeoutExpired as e:
+        logger.error("命令执行超时: {}, 超时时间: {} 秒", e.cmd, timeout_sec)
         return {"ok": False, "output": f"[run_cmd] TimeoutExpired after {timeout_sec}s: {e.cmd!r}"}
     except Exception as e:
         return _err("run_cmd", e, cmd=cmd, timeout_sec=timeout_sec)
@@ -77,25 +106,76 @@ def rg_search(query: str, path: str = ".", max_lines: int = 200):
     try:
         # 先确保 path 合法（防穿越）
         _ = _safe(path)
+        logger.debug("搜索文本: {}, 路径: {}, 最大行数: {}", query, path, max_lines)
+        
         cmd = f'rg -n --no-heading --color never "{query}" "{path}"'
         r = run_cmd(cmd)
+        
         if not r.get("ok"):
+            logger.warning("rg搜索失败: {}", query)
             return r
 
         out = r.get("output", "")
         lines = out.splitlines()
+        
         if len(lines) > max_lines:
+            logger.info("rg搜索结果过多: {} 行，截断至 {} 行", len(lines), max_lines)
             out = "\n".join(lines[:max_lines]) + f"\n... (truncated, {len(lines)} lines total)"
+        
+        logger.info("rg搜索完成: {}, 找到 {} 行结果", query, len(lines))
         return {"ok": True, "output": _sanitize_text(out)}
     except Exception as e:
         return _err("rg_search", e, query=query, path=path, max_lines=max_lines)
+
+def read_file_lines(path: str, start_line: int = 0, max_lines: int = 200):
+    try:
+        p = _safe(path)
+        logger.debug("读取文件行: {}, 起始行: {}, 最大行数: {}", path, start_line, max_lines)
+        
+        # 读取文件内容
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        
+        # 处理起始行索引（支持从0开始计数）
+        if start_line < 0:
+            start_line = max(0, len(lines) + start_line)  # 支持负数索引，从末尾开始
+        
+        # 确保起始行不超过文件行数
+        if start_line >= len(lines):
+            logger.warning("起始行超出文件范围: {} >= {}", start_line, len(lines))
+            return {"ok": True, "output": ""}
+        
+        # 计算结束行
+        end_line = min(start_line + max_lines, len(lines))
+        
+        # 提取指定行范围
+        selected_lines = lines[start_line:end_line]
+        
+        # 构建输出，包含行号信息
+        output_lines = []
+        for i, line in enumerate(selected_lines, start=start_line + 1):
+            output_lines.append(f"{i}: {line.rstrip()}")
+        
+        output = "\n".join(output_lines)
+        output = _sanitize_text(output)
+        
+        logger.info("成功读取文件行: {}, 行范围: {}-{}, 共 {} 行", 
+                   path, start_line + 1, end_line, len(selected_lines))
+        
+        return {"ok": True, "output": output}
+    except Exception as e:
+        return _err("read_file_lines", e, path=path, start_line=start_line, max_lines=max_lines)
 
 def list_dir(path: str = "."):
     """列出某个目录下的文件/文件夹（返回按字母排序的列表）。"""
     try:
         p = _safe(path)
+        logger.debug("列出目录: {}", path)
+        
         names = os.listdir(p)
         names.sort()
+        
+        logger.info("目录列表完成: {}, 找到 {} 个条目", path, len(names))
         return {"ok": True, "output": "\n".join(names)}
     except Exception as e:
         return _err("list_dir", e, path=path)
@@ -107,6 +187,8 @@ def grep_text(pattern: str, path: str = ".", max_matches: int = 50):
     try:
         import re
 
+        logger.debug("文本搜索: {}, 路径: {}, 最大匹配数: {}", pattern, path, max_matches)
+        
         root = _safe(path)
         rx = re.compile(pattern)
         hits = []
@@ -125,11 +207,13 @@ def grep_text(pattern: str, path: str = ".", max_matches: int = 50):
                                 rel = os.path.relpath(file_path, WORKDIR)
                                 hits.append(f"{rel}:{i}: {line.rstrip()}")
                                 if len(hits) >= max_matches:
+                                    logger.info("文本搜索达到最大匹配数: {}", max_matches)
                                     return {"ok": True, "output": "\n".join(hits)}
                 except Exception:
                     # 单文件读不了就跳过
                     continue
 
+        logger.info("文本搜索完成: {}, 找到 {} 个匹配", pattern, len(hits))
         return {"ok": True, "output": "\n".join(hits) if hits else "(no matches)"}
     except Exception as e:
         return _err("grep_text", e, pattern=pattern, path=path, max_matches=max_matches)
@@ -141,4 +225,5 @@ TOOLS = {
     "list_dir": list_dir,
     "rg_search": rg_search,
     "grep_text": grep_text,
+    "read_file_lines": read_file_lines,
 }

@@ -1,8 +1,15 @@
-import os, json, re, time, platform
-from tools import TOOLS
+import json
+import os
+import platform
+import re
+import time
+from types import SimpleNamespace
+
 from openai import OpenAI
 
-# ===== DeepSeek(OpenAI-compatible) client =====
+from log import end_thinking_stream, get_logger, start_thinking_stream, stream_thinking
+from tools import TOOLS
+
 client = OpenAI(
     api_key=os.environ.get("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
@@ -10,21 +17,20 @@ client = OpenAI(
 
 MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-BASE_SYSTEM = """你是代码工具Agent。
-
-只允许两种输出：(最高优先级)
-1) <tool_call>{"name":"...","arguments":{...}}</tool_call>  (这个用来调用工具)
-2) <final>...</final> (这个用来回复用户)
+BASE_SYSTEM = """你是代码工具 Agent。
+只允许两种输出：
+1. <tool_call>{"name":"...","arguments":{...}}</tool_call>
+2. <final>...</final>
 
 规则：
-- 你需要对用户的需求加以分析，然后决定是否调用工具还是直接回复用户。并不是所有需求都需要依据代码
-- 只要需要文件/目录/命令结果：立刻输出 tool_call，禁止解释/猜测。
-- 不确定内容先 read_file；修改后 write_file 写回完整文件；关键修改后 run_cmd 验证。  假如是修改了用户的项目文件，最终告知用户修改位置（多少行到多少行）
-- 每轮最多调用一个工具；拿到结果再继续。
-- 当发现用户系统中有工具没有安装，提示用户是否安装，并将安装方法告知用户
+- 先判断是否真的需要工具，不是所有问题都需要使用工具。
+- 只要需要文件、目录或命令结果，就先调用工具，不要猜。
+- 不确定内容时优先 rg_search，再使用read_file_lines，最终若还是没有结果或者需要更多信息则使用read_file
+- 修改后用 write_file 回写完整文件，关键修改后用 run_cmd 验证。
+- 每轮最多调用一个工具，拿到结果后再继续。
+- 若发现xx命令不是外部命令之类的，提示用户安装相关命令插件，并告知用户在当前环境下如何安装
 """
 
-# 工具定义（OpenAI tools schema，DeepSeek 兼容）
 TOOL_DEFS = [
     {
         "type": "function",
@@ -35,7 +41,7 @@ TOOL_DEFS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "max_bytes": {"type": "integer", "default": 20000},  # 建议先别喂太大
+                    "max_bytes": {"type": "integer", "default": 20000},
                 },
                 "required": ["path"],
             },
@@ -48,7 +54,10 @@ TOOL_DEFS = [
             "description": "Write full content to a text file in the project",
             "parameters": {
                 "type": "object",
-                "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
                 "required": ["path", "content"],
             },
         },
@@ -96,7 +105,22 @@ TOOL_DEFS = [
             },
         },
     },
-
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file_lines",
+            "description": "Read specific lines from a text file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "start_line": {"type": "integer", "default": 0},
+                    "max_lines": {"type": "integer", "default": 200},
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
@@ -104,47 +128,115 @@ FINAL_RE = re.compile(r"<final>\s*(.*?)\s*</final>", re.S)
 
 
 def parse_tool_call(content: str):
-    m = CALL_RE.search(content or "")
-    if not m:
+    match = CALL_RE.search(content or "")
+    if not match:
         return None
-    obj = json.loads(m.group(1))
+    obj = json.loads(match.group(1))
     return obj["name"], obj.get("arguments", {})
 
 
 def parse_final(content: str):
-    m = FINAL_RE.search(content or "")
-    return m.group(1) if m else None
+    match = FINAL_RE.search(content or "")
+    return match.group(1) if match else None
 
 
 def trim_messages(messages, keep_last=20):
-    # 永远保留第一条 system，其余保留最近 keep_last 条
-    sys_msg = None
+    system_message = None
     rest = []
-    for m in messages:
-        if m.get("role") == "system" and sys_msg is None:
-            sys_msg = m
+    for message in messages:
+        if message.get("role") == "system" and system_message is None:
+            system_message = message
         else:
-            rest.append(m)
-    return ([sys_msg] if sys_msg else []) + rest[-keep_last:]
+            rest.append(message)
+    return ([system_message] if system_message else []) + rest[-keep_last:]
 
 
-def deepseek_chat(messages):
-    """
-    返回 assistant message（兼容 tool_calls / content）
-    """
-    resp = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=TOOL_DEFS,
-        tool_choice="auto",
-        temperature=0.2,
-        stream=False,
-    )
-    return resp.choices[0].message  # .content / .tool_calls
+def deepseek_chat(messages, stream_thinking_callback=None):
+    logger = get_logger()
+
+    is_stream = bool(stream_thinking_callback)
+
+    try:
+        if not is_stream:
+            resp = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                tools=TOOL_DEFS,
+                tool_choice="auto",
+                temperature=0.2,
+                stream=False,
+            )
+            return resp.choices[0].message
+
+        start_thinking_stream()
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=TOOL_DEFS,
+            tool_choice="auto",
+            temperature=0.2,
+            stream=True,
+        )
+
+        content_parts = []
+        reasoning_parts = []
+        tool_call_chunks = {}
+
+        for chunk in resp:
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            reasoning_chunk = getattr(delta, "reasoning_content", None)
+            if reasoning_chunk:
+                reasoning_parts.append(reasoning_chunk)
+                stream_thinking(reasoning_chunk)
+                stream_thinking_callback(reasoning_chunk)
+
+            content_chunk = getattr(delta, "content", None)
+            if content_chunk:
+                content_parts.append(content_chunk)
+
+            for tc in getattr(delta, "tool_calls", None) or []:
+                index = getattr(tc, "index", 0)
+                entry = tool_call_chunks.setdefault(
+                    index,
+                    {"id": getattr(tc, "id", None), "name": "", "arguments": ""},
+                )
+                if getattr(tc, "id", None):
+                    entry["id"] = tc.id
+                function = getattr(tc, "function", None)
+                if not function:
+                    continue
+                if getattr(function, "name", None):
+                    entry["name"] += function.name
+                if getattr(function, "arguments", None):
+                    entry["arguments"] += function.arguments
+
+        tool_calls = [
+            SimpleNamespace(
+                id=entry["id"] or f"call_{index}",
+                function=SimpleNamespace(
+                    name=entry["name"],
+                    arguments=entry["arguments"] or "{}",
+                ),
+            )
+            for index, entry in sorted(tool_call_chunks.items())
+        ]
+
+        return SimpleNamespace(
+            content="".join(content_parts),
+            tool_calls=tool_calls,
+            reasoning_content="".join(reasoning_parts),
+        )
+    except Exception as exc:
+        logger.error("DeepSeek API调用失败: {}", str(exc))
+        raise
+    finally:
+        if is_stream:
+            end_thinking_stream()
 
 
 def get_system_info():
-    """获取系统信息"""
     system_info = {
         "os": platform.system(),
         "release": platform.release(),
@@ -154,52 +246,57 @@ def get_system_info():
         "python_version": platform.python_version(),
         "platform": platform.platform(),
     }
-    
-    # 检测是否是WSL
+
     try:
-        with open("/proc/version", "r") as f:
-            proc_version = f.read()
+        with open("/proc/version", "r", encoding="utf-8") as file:
+            proc_version = file.read()
             if "microsoft" in proc_version.lower():
                 system_info["is_wsl"] = True
                 system_info["wsl_version"] = "WSL2" if "WSL2" in proc_version else "WSL1"
             else:
                 system_info["is_wsl"] = False
-    except:
+    except Exception:
         system_info["is_wsl"] = False
-    
-    # 格式化系统信息字符串
-    info_lines = []
-    info_lines.append(f"操作系统: {system_info['os']}")
-    info_lines.append(f"系统版本: {system_info['release']}")
-    info_lines.append(f"平台架构: {system_info['machine']}")
-    info_lines.append(f"处理器: {system_info['processor']}")
-    info_lines.append(f"Python版本: {system_info['python_version']}")
-    
-    if system_info.get('is_wsl'):
-        info_lines.append(f"运行环境: {system_info['wsl_version']} (Windows Subsystem for Linux)")
-    
-    return "\n".join(info_lines)
+
+    lines = [
+        f"操作系统: {system_info['os']}",
+        f"系统版本: {system_info['release']}",
+        f"平台架构: {system_info['machine']}",
+        f"处理器: {system_info['processor']}",
+        f"Python版本: {system_info['python_version']}",
+    ]
+    if system_info.get("is_wsl"):
+        lines.append(f"运行环境: {system_info['wsl_version']} (Windows Subsystem for Linux)")
+    return "\n".join(lines)
 
 
-def run_agent(task: str, max_steps: int = 18):
-    # 获取系统信息并构建完整的系统提示
+def sanitize_text(s):
+    if s is None:
+        return ""
+    if not isinstance(s, str):
+        s = str(s)
+    # 把 surrogate / 非法字符替换掉，确保能 utf-8 编码
+    return s.encode("utf-8", "replace").decode("utf-8")
+
+def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = True):
+    logger = get_logger()
     system_info = get_system_info()
-    full_system = BASE_SYSTEM + f"\n\n当前工作目录是：{os.getcwd()}\n\n系统信息：\n{system_info}"
-    
+    full_system = BASE_SYSTEM + f"\n\n当前工作目录：{os.getcwd()}\n\n系统信息：\n{system_info}"
+
     messages = [
         {"role": "system", "content": full_system},
         {"role": "user", "content": task},
     ]
 
     t0 = time.perf_counter()
+    logger.info("开始处理任务: {}", task)
 
     for step in range(1, max_steps + 1):
-        msg = deepseek_chat(messages)
+        thinking_callback = (lambda chunk: None) if enable_thinking_stream else None
+        msg = deepseek_chat(messages, thinking_callback)
 
-        # ===== 1) SDK tool_calls =====
         tool_calls = getattr(msg, "tool_calls", None) or []
         if tool_calls:
-            # 记录 assistant 的 tool_call 意图
             messages.append(
                 {
                     "role": "assistant",
@@ -218,7 +315,7 @@ def run_agent(task: str, max_steps: int = 18):
                 }
             )
 
-            tc = tool_calls[0]  # 你要求每轮最多一个
+            tc = tool_calls[0]
             name = tc.function.name
             args = tc.function.arguments or "{}"
             if isinstance(args, str):
@@ -226,55 +323,81 @@ def run_agent(task: str, max_steps: int = 18):
 
             if name not in TOOLS:
                 result = {"ok": False, "output": f"unknown tool: {name}"}
+                logger.error("未知工具: {}", name)
             else:
+                logger.info("调用工具: {}", name)
                 result = TOOLS[name](**args)
 
-            # 你本地看日志可以，但别指望模型看 print
-            print(f"[tool] {name} ok={result.get('ok')} output: {result.get('output', '')}")
+            if result.get("ok"):
+                logger.info("工具 {} 执行成功", name)
+            else:
+                logger.error("工具 {} 执行失败: {}", name, result.get("output", ""))
 
-            # ===== 关键：把工具结果喂回模型 =====
-            # 更稳：直接喂 output（不要再包一层 JSON，尤其 output 很长时）
             messages.append(
                 {
                     "role": "tool",
-                    "tool_call_id": tc.id,  # 很重要：对应到这次 tool call
+                    "tool_call_id": tc.id,
                     "name": name,
                     "content": result.get("output", ""),
                 }
             )
-
             messages = trim_messages(messages, keep_last=30)
             continue
 
-        # ===== 2) 普通输出 =====
-        content = (msg.content or "").strip()
+        content = (getattr(msg, "content", None) or "").strip()
         messages.append({"role": "assistant", "content": content})
 
         dt = time.perf_counter() - t0
-        print(f"[Step {step}] {content if content else '(empty)'}  tot time: {dt:.3f}s\n")
+        logger.info("[Step {}] {}  tot time: {:.3f}s", step, content if content else "(empty)", dt)
 
-        # 看到 <final> 就停
-        if parse_final(content) is not None or ("<final>" in content and "</final>" in content):
+        final_text = parse_final(content)
+        if final_text is not None:
+            logger.info("任务完成，收到最终回复")
+            print(final_text)
             break
 
-        # 如果模型没用 tool_calls 机制而是走你自定义 <tool_call> 标签，也能兜底
         maybe = parse_tool_call(content)
         if maybe:
             name, args = maybe
             if name not in TOOLS:
                 result = {"ok": False, "output": f"unknown tool: {name}"}
+                logger.error("未知工具(标签): {}", name)
             else:
+                logger.info("调用工具(标签): {}", name)
                 result = TOOLS[name](**args)
 
-            print(f"[tool(tag)] {name} ok={result.get('ok')}")
+            if result.get("ok"):
+                logger.info("工具 {} 执行成功(标签)", name)
+            else:
+                logger.error("工具 {} 执行失败(标签): {}", name, result.get("output", ""))
+
             messages.append({"role": "tool", "name": name, "content": result.get("output", "")})
             messages = trim_messages(messages, keep_last=30)
             continue
 
-# ....
+        if content:
+            print(content)
+            break
+
+        logger.warning("模型未返回可用内容，结束本轮任务")
+        break
+
+    total_time = time.perf_counter() - t0
+    logger.info("任务处理完成，总耗时: {:.3f}s", total_time)
+
+
 if __name__ == "__main__":
+    logger = get_logger()
+    logger.info("Agent启动")
+
     while True:
-        query = str(input("> ").strip())
-        if not query:
-            continue
-        run_agent(query)
+        try:
+            query = sanitize_text(str(input("> ").strip()))
+            if not query:
+                continue
+            run_agent(query)
+        except KeyboardInterrupt:
+            logger.info("用户中断，退出程序")
+            break
+        except Exception as exc:
+            logger.error("运行出错: {}", str(exc))
