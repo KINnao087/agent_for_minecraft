@@ -9,13 +9,13 @@ It supports **tool calling**, **multi-turn sessions** (so it doesn't forget afte
 
 ## Features
 
-- ✅ **Tool Calling**: the model can call your registered `TOOLS` (file ops, search, commands, etc.)
-- ✅ **Session Memory**: keeps conversation context across multiple tasks in the same run
-- ✅ **Streaming Reasoning (optional)**: stream the model's thinking output while it works
-- ✅ **Token-based Context Trimming**: sliding window based on estimated tokens, while:
+-  **Tool Calling**: the model can call your registered `TOOLS` (file ops, search, commands, etc.)
+-  **Session Memory**: keeps conversation context across multiple tasks in the same run
+-  **Streaming Reasoning (optional)**: stream the model's thinking output while it works
+-  **Token-based Context Trimming**: sliding window based on estimated tokens, while:
   - always keeping `system` messages
   - avoiding breaking `assistant(tool_call) + tool(result)` pairs
-- ✅ **Config-driven**: settings live in `config.json` and are loaded via `config.py`
+-  **Config-driven**: settings live in `config.json` and are loaded via `config.py`
 
 ---
 
