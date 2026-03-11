@@ -19,13 +19,22 @@ MODEL = CONFIG["model"]
 BASE_SYSTEM = CONFIG["base_system"]
 KEEP_LAST = CONFIG.get("keep_last", 4000)
 TOOL_DEFS = CONFIG["tool_defs"]
+API_KEY = os.environ.get("DEEPSEEK_API_KEY") or CONFIG.get("api_key")
+
+
+def _preview_text(value, limit=300):
+    text = "" if value is None else str(value)
+    text = text.replace("\r", "\\r").replace("\n", "\\n")
+    return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
 def get_client():
     global _CLIENT
     if _CLIENT is None:
+        if not API_KEY:
+            raise RuntimeError("Missing DeepSeek API key. Set DEEPSEEK_API_KEY or config.api_key.")
         _CLIENT = OpenAI(
-            api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            api_key=API_KEY,
             base_url="https://api.deepseek.com",
         )
     return _CLIENT
@@ -112,6 +121,13 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
 
     messages = session.copy() if session else build_initial_session()
     total_tokens = calc_total_tokens(messages, MODEL)
+    logger.info(
+        "Prepare agent run: max_steps={}, stream={}, existing_messages={}, total_tokens={}",
+        max_steps,
+        enable_thinking_stream,
+        len(messages),
+        total_tokens,
+    )
 
     messages, total_tokens = append_message(
         messages,
@@ -124,6 +140,7 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
 
     t0 = time.perf_counter()
     logger.info("Start task: {}", task)
+    logger.info("User task preview: {}", _preview_text(task))
 
     step, content, messages, total_tokens = run_main_loop(
         client=get_client(),
@@ -138,6 +155,7 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
     )
 
     dt = time.perf_counter() - t0
+    logger.info("Assistant final preview: {}", _preview_text(get_last_assistant_text(messages)))
     logger.info("[Step {}] {} total time: {:.3f}s", step, content if content else "(empty)", dt)
     logger.info("Task completed in {:.3f}s", dt)
 
