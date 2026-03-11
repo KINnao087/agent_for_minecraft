@@ -1,7 +1,4 @@
-try:
-    import tiktoken
-except ImportError:
-    tiktoken = None
+import tiktoken
 
 _TOKEN_ENCODINGS = {}
 

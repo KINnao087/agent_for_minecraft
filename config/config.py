@@ -17,27 +17,29 @@ def load_config(config_path=None):
         with open(config_path, "r", encoding="utf-8") as file:
             content = file.read().strip()
             if not content:
-                raise ValueError(f"配置文件为空: {config_path}")
+                raise ValueError(f"config file is empty: {config_path}")
             config = json.loads(content)
             if not isinstance(config, dict):
-                raise TypeError(f"配置文件必须是 JSON object: {config_path}")
+                raise TypeError(f"config file must be a JSON object: {config_path}")
     except FileNotFoundError:
-        logger.error("未找到配置文件: {}", config_path)
+        logger.error("config file not found: {}", config_path)
         raise
     except json.JSONDecodeError as exc:
-        logger.error("配置文件 JSON 解析失败: {} ({})", config_path, str(exc))
+        logger.error("failed to parse config json: {} ({})", config_path, str(exc))
         raise
 
     required_keys = ("model", "base_system", "tool_defs")
     missing_keys = [key for key in required_keys if key not in config]
     if missing_keys:
-        raise KeyError(f"配置文件缺少必要字段: {', '.join(missing_keys)}")
+        raise KeyError(f"config file missing required keys: {', '.join(missing_keys)}")
 
     if not isinstance(config["model"], str) or not config["model"].strip():
-        raise TypeError("配置项 model 必须是非空字符串")
+        raise TypeError("config field 'model' must be a non-empty string")
     if not isinstance(config["base_system"], str) or not config["base_system"].strip():
-        raise TypeError("配置项 base_system 必须是非空字符串")
+        raise TypeError("config field 'base_system' must be a non-empty string")
     if not isinstance(config["tool_defs"], list):
-        raise TypeError("配置项 tool_defs 必须是数组")
+        raise TypeError("config field 'tool_defs' must be a list")
+    if "api_key" in config and config["api_key"] is not None and not isinstance(config["api_key"], str):
+        raise TypeError("config field 'api_key' must be a string or null")
 
     return config
