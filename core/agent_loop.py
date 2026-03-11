@@ -31,15 +31,15 @@ def handle_tool_call(tc, name, args, messages, total_tokens, keep_last, model):
 
     if name not in TOOLS:
         result = {"ok": False, "output": f"unknown tool: {name}"}
-        logger.error("未知工具: {}", name)
+        logger.error("Unknown tool: {}", name)
     else:
-        logger.info("调用工具: {}", name)
+        logger.info("Call tool: {}", name)
         result = TOOLS[name](**args)
 
     if result.get("ok"):
-        logger.info("工具 {} 执行成功", name)
+        logger.info("Tool {} succeeded", name)
     else:
-        logger.error("工具 {} 执行失败: {}", name, result.get("output", ""))
+        logger.error("Tool {} failed: {}", name, result.get("output", ""))
 
     messages, total_tokens = append_message(
         messages,
@@ -57,7 +57,17 @@ def handle_tool_call(tc, name, args, messages, total_tokens, keep_last, model):
     return messages, total_tokens
 
 
-def run_main_loop(client, model, tool_defs, keep_last, max_steps, enable_thinking_stream, messages, total_tokens):
+def run_main_loop(
+    client,
+    model,
+    tool_defs,
+    keep_last,
+    max_steps,
+    enable_thinking_stream,
+    messages,
+    total_tokens,
+    echo_output=True,
+):
     logger = get_logger()
 
     for step in range(1, max_steps + 1):
@@ -109,8 +119,9 @@ def run_main_loop(client, model, tool_defs, keep_last, max_steps, enable_thinkin
 
         final_text = parse_final(content)
         if final_text is not None:
-            logger.info("任务完成，收到最终回复")
-            print(final_text)
+            logger.info("Task completed with final tag")
+            if echo_output:
+                print(final_text)
             return step, content, messages, total_tokens
 
         maybe = parse_tool_call(content)
@@ -118,15 +129,15 @@ def run_main_loop(client, model, tool_defs, keep_last, max_steps, enable_thinkin
             name, args = maybe
             if name not in TOOLS:
                 result = {"ok": False, "output": f"unknown tool: {name}"}
-                logger.error("未知工具(标签): {}", name)
+                logger.error("Unknown tagged tool: {}", name)
             else:
-                logger.info("调用工具(标签): {}", name)
+                logger.info("Call tagged tool: {}", name)
                 result = TOOLS[name](**args)
 
             if result.get("ok"):
-                logger.info("工具 {} 执行成功(标签)", name)
+                logger.info("Tagged tool {} succeeded", name)
             else:
-                logger.error("工具 {} 执行失败(标签): {}", name, result.get("output", ""))
+                logger.error("Tagged tool {} failed: {}", name, result.get("output", ""))
 
             messages, total_tokens = append_message(
                 messages,
@@ -139,11 +150,11 @@ def run_main_loop(client, model, tool_defs, keep_last, max_steps, enable_thinkin
             continue
 
         if content:
-            print(content)
+            if echo_output:
+                print(content)
             return step, content, messages, total_tokens
 
-        logger.warning("模型未返回可用内容，结束本轮任务")
+        logger.warning("Model returned no usable content; ending task")
         return step, content, messages, total_tokens
 
     return max_steps, "", messages, total_tokens
-
