@@ -119,6 +119,10 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         session_id = str(request.get("session_id") or "default")
         logger.info("process request action={}, session_id={}", action, session_id)
 
+        if action == "ping":
+            logger.info("heartbeat received for session {}", session_id)
+            return {"ok": True, "action": "pong", "session_id": session_id}
+
         if action == "reset":
             SESSION_MANAGER.reset(session_id)
             logger.info("session reset completed: {}", session_id)

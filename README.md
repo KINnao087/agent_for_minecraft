@@ -81,7 +81,7 @@ Default address:
 ```
 
 Fields:
-- `action`: request type, currently supports `chat` and `reset`
+- `action`: request type, currently supports `chat`, `reset`, and `beat`
 - `session_id`: conversation id, used to keep multi-turn context for one external client
 - `task`: user input passed to the agent
 - `max_steps`: optional, max internal reasoning/tool-call steps
@@ -104,6 +104,25 @@ Request:
 ```json
 {
   "action": "reset",
+  "session_id": "demo"
+}
+```
+
+### Heartbeat
+
+Request:
+```json
+{
+  "action": "beat",
+  "session_id": "demo"
+}
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "action": "beat",
   "session_id": "demo"
 }
 ```
