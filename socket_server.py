@@ -4,7 +4,7 @@ import socketserver
 import threading
 from typing import Dict, List
 
-from agent import build_initial_session, run_agent_and_get_reply
+from agent import MODEL, build_initial_session, run_agent_and_get_reply
 from log import get_logger
 
 
@@ -121,7 +121,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
 
         if action == "ping":
             logger.info("heartbeat received for session {}", session_id)
-            return {"ok": True, "action": "pong", "session_id": session_id}
+            return {"ok": True, "action": "pong", "model": MODEL, "session_id": session_id}
 
         if action == "reset":
             SESSION_MANAGER.reset(session_id)

@@ -1,0 +1,14 @@
+2026/03/18-18:43:41.912 5a64 Reusing MANIFEST D:\pywork\agent_for_minecraft\.playwright\deepseek_web\Default\IndexedDB\https_chat.deepseek.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/18-18:43:41.912 5a64 Recovering log #42
+2026/03/18-18:43:41.912 5a64 Reusing old log D:\pywork\agent_for_minecraft\.playwright\deepseek_web\Default\IndexedDB\https_chat.deepseek.com_0.indexeddb.leveldb/000042.log 
+2026/03/18-18:43:41.912 5a64 Delete type=2 #40
+2026/03/18-18:43:41.914 5a64 Level-0 table #47: started
+2026/03/18-18:43:41.915 5a64 Level-0 table #47: 1587 bytes OK
+2026/03/18-18:43:41.916 5a64 Delete type=0 #42
+2026/03/18-18:43:41.916 5a64 Manual compaction at level-0 from '\x00\x0d\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0e\x00\x00\x00' @ 0 : 0; will stop at '\x00\x0d\x00\x00\xc8 \x00l\x00o\x00c\x00a\x00l\x00-\x00f\x00o\x00r\x00a\x00g\x00e\x00-\x00d\x00e\x00t\x00e\x00c\x00t\x00-\x00b\x00l\x00o\x00b\x00-\x00s\x00u\x00p\x00p\x00o\x00r\x00t' @ 1289 : 1
+2026/03/18-18:43:41.916 5a64 Compacting 1@0 + 1@1 files
+2026/03/18-18:43:41.917 5a64 Generated table #48@0: 29 keys, 695 bytes
+2026/03/18-18:43:41.917 5a64 Compacted 1@0 + 1@1 files => 695 bytes
+2026/03/18-18:43:41.918 5a64 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/03/18-18:43:41.918 5a64 Delete type=2 #47
+2026/03/18-18:43:41.918 5a64 Manual compaction at level-0 from '\x00\x0d\x00\x00\xc8 \x00l\x00o\x00c\x00a\x00l\x00-\x00f\x00o\x00r\x00a\x00g\x00e\x00-\x00d\x00e\x00t\x00e\x00c\x00t\x00-\x00b\x00l\x00o\x00b\x00-\x00s\x00u\x00p\x00p\x00o\x00r\x00t' @ 1289 : 1 .. '\x00\x0e\x00\x00\x00' @ 0 : 0; will stop at (end)

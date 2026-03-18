@@ -1,5 +1,49 @@
 {
+  "provider": "deepseek_api",
   "api_key": "sk-a4e084846b83482f85fcc46dc711dfd2",
+  "deepseek_api": {
+    "base_url": "https://api.deepseek.com",
+    "temperature": 0.2
+  },
+  "deepseek_web": {
+    "chat_url": "https://chat.deepseek.com/",
+    "user_data_dir": ".playwright/deepseek_web",
+    "browser_type": "chromium",
+    "browser_channel": null,
+    "headless": false,
+    "viewport_width": 1440,
+    "viewport_height": 960,
+    "input_ready_timeout_ms": 120000,
+    "navigation_timeout_ms": 60000,
+    "reply_timeout_ms": 180000,
+    "poll_interval_ms": 1000,
+    "stable_rounds": 3,
+    "input_selectors": [
+      "textarea",
+      "textarea[placeholder*=\"DeepSeek\"]",
+      "textarea[placeholder*=\"Send\"]",
+      "div[contenteditable=\"true\"]"
+    ],
+    "send_button_selectors": [
+      "button[type=\"submit\"]",
+      "button[aria-label*=\"Send\"]",
+      "button[aria-label*=\"send\"]",
+      "button:has-text(\"Send\")"
+    ],
+    "assistant_message_selectors": [
+      "[data-message-author-role=\"assistant\"]",
+      "[data-role=\"assistant\"]",
+      "[class*=\"assistant\"] [class*=\"markdown\"]",
+      ".ds-markdown",
+      "main article"
+    ],
+    "loading_selectors": [
+      "button:has-text(\"Stop\")",
+      "[aria-label*=\"Stop\"]",
+      "[class*=\"loading\"]",
+      "[class*=\"typing\"]"
+    ]
+  },
   "model": "deepseek-chat",
   "base_system": "你是代码工具 Agent。\n只允许两种输出：\n1. <tool_call>{\"name\":\"...\",\"arguments\":{...}}</tool_call>\n2. <final>...</final>\n\n规则：\n- 先判断是否真的需要工具，不是所有问题都需要使用工具。\n- 只要需要文件、目录或命令结果，就先调用工具，不要猜。\n- 不确定内容时优先 rg_search，再使用read_file_lines，最终若还是没有结果或者需要更多信息则使用read_file\n- 修改后用 write_file 回写完整文件，关键修改后用 run_cmd 验证。\n- 每轮最多调用一个工具，拿到结果后再继续。\n- 若发现xx命令不是外部命令之类的，提示用户安装相关命令插件，并告知用户在当前环境下如何安装\n",
   "keep_last": 4000,

@@ -1,4 +1,7 @@
-import tiktoken
+try:
+    import tiktoken
+except ImportError:
+    tiktoken = None
 
 _TOKEN_ENCODINGS = {}
 
@@ -22,8 +25,7 @@ def get_token_encoding(model: str):
 
 def estimate_tokens(text: str, model: str) -> int:
     """
-    估算文本 token 数量。
-    优先使用 tiktoken，失败时回退启发式估算。
+    Estimate token usage with tiktoken when available, and fall back to a heuristic otherwise.
     """
     if not text:
         return 0

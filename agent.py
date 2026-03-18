@@ -2,14 +2,13 @@ import os
 import platform
 import time
 
-from openai import OpenAI
-
 from config.config import load_config
 from core.agent_loop import run_main_loop
 from core.message_store import append_message, calc_total_tokens
 from core.message_store import trim_messages as _trim_messages
 from core.token_counter import count_message_tokens as _count_message_tokens
 from core.token_counter import estimate_tokens as _estimate_tokens
+from core.web_to_api.factory import build_provider
 from log import get_logger
 
 CONFIG = load_config()
@@ -19,7 +18,7 @@ MODEL = CONFIG["model"]
 BASE_SYSTEM = CONFIG["base_system"]
 KEEP_LAST = CONFIG.get("keep_last", 4000)
 TOOL_DEFS = CONFIG["tool_defs"]
-API_KEY = os.environ.get("DEEPSEEK_API_KEY") or CONFIG.get("api_key")
+PROVIDER = str(CONFIG.get("provider") or "deepseek_api").strip().lower()
 
 
 def _preview_text(value, limit=300):
@@ -31,12 +30,7 @@ def _preview_text(value, limit=300):
 def get_client():
     global _CLIENT
     if _CLIENT is None:
-        if not API_KEY:
-            raise RuntimeError("Missing DeepSeek API key. Set DEEPSEEK_API_KEY or config.api_key.")
-        _CLIENT = OpenAI(
-            api_key=API_KEY,
-            base_url="https://api.deepseek.com",
-        )
+        _CLIENT = build_provider(CONFIG)
     return _CLIENT
 
 
@@ -118,11 +112,15 @@ def get_last_assistant_text(messages):
 
 def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = True, session=None, echo_output=True):
     logger = get_logger()
+    if PROVIDER == "deepseek_web" and enable_thinking_stream:
+        logger.warning("DeepSeek web provider does not support thinking stream; disabling it")
+        enable_thinking_stream = False
 
     messages = session.copy() if session else build_initial_session()
     total_tokens = calc_total_tokens(messages, MODEL)
     logger.info(
-        "Prepare agent run: max_steps={}, stream={}, existing_messages={}, total_tokens={}",
+        "Prepare agent run: provider={}, max_steps={}, stream={}, existing_messages={}, total_tokens={}",
+        PROVIDER,
         max_steps,
         enable_thinking_stream,
         len(messages),
