@@ -25,6 +25,7 @@ class ChatResult:
 
 
 class BaseChatProvider(ABC):
+    # Return one chat result from the underlying provider.
     @abstractmethod
     def chat(
         self,

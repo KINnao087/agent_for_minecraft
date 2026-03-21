@@ -6,6 +6,7 @@ except ImportError:
 _TOKEN_ENCODINGS = {}
 
 
+# Return a cached tokenizer for the selected model.
 def get_token_encoding(model: str):
     if tiktoken is None:
         raise RuntimeError("tiktoken is not installed")
@@ -23,6 +24,7 @@ def get_token_encoding(model: str):
     return encoding
 
 
+# Estimate token usage with tiktoken or a fallback heuristic.
 def estimate_tokens(text: str, model: str) -> int:
     """
     Estimate token usage with tiktoken when available, and fall back to a heuristic otherwise.
@@ -41,6 +43,7 @@ def estimate_tokens(text: str, model: str) -> int:
         return max(1, int(tokens + 0.5))
 
 
+# Estimate the token cost of a single message payload.
 def count_message_tokens(message: dict, model: str) -> int:
     tokens = 0
 

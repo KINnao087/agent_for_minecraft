@@ -8,12 +8,14 @@ from agent import MODEL, build_initial_session, run_agent_and_get_reply
 from log import get_logger
 
 
+# Build a compact text preview for socket logs.
 def _preview_text(value, limit=500):
     text = "" if value is None else str(value)
     text = text.replace("\r", "\\r").replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
+# Serialize request data for safe preview logging.
 def _preview_json(value, limit=500):
     try:
         text = json.dumps(value, ensure_ascii=False)
@@ -23,10 +25,12 @@ def _preview_json(value, limit=500):
 
 
 class SessionManager:
+    # Initialize in-memory session storage.
     def __init__(self):
         self._lock = threading.Lock()
         self._sessions: Dict[str, List[dict]] = {}
 
+    # Return a copy of the session, creating one if needed.
     def get(self, session_id: str):
         with self._lock:
             session = self._sessions.get(session_id)
@@ -35,10 +39,12 @@ class SessionManager:
                 self._sessions[session_id] = session
             return session.copy()
 
+    # Store the updated session state for a client.
     def set(self, session_id: str, session):
         with self._lock:
             self._sessions[session_id] = session.copy()
 
+    # Reset a session back to its initial state.
     def reset(self, session_id: str):
         with self._lock:
             self._sessions[session_id] = build_initial_session()
@@ -48,6 +54,7 @@ SESSION_MANAGER = SessionManager()
 
 
 class JsonLineTCPHandler(socketserver.StreamRequestHandler):
+    # Read newline-delimited JSON requests from the socket.
     def handle(self):
         logger = get_logger()
         client_addr = f"{self.client_address[0]}:{self.client_address[1]}"
@@ -94,6 +101,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
 
         logger.info("socket client disconnected: {}", client_addr)
 
+    # Parse one raw request and send one JSON response.
     def _process_and_respond(self, client_addr: str, raw: bytes):
         logger = get_logger()
         logger.info("socket raw request from {}: {}", client_addr, _preview_text(raw.decode("utf-8", errors="replace")))
@@ -113,6 +121,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write((json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8"))
         self.wfile.flush()
 
+    # Dispatch supported socket actions to the agent.
     def process_request(self, request: dict):
         logger = get_logger()
         action = request.get("action", "chat")
@@ -158,6 +167,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         }
 
 
+# Start the JSON line TCP server.
 def main():
     parser = argparse.ArgumentParser(description="JSON socket server for agent_for_minecraft")
     parser.add_argument("--host", default="127.0.0.1")

@@ -22,11 +22,15 @@ It supports **tool calling**, **multi-turn sessions** (so it doesn't forget afte
 ## Requirements
 
 - Python **3.10+** (3.11 recommended)
-- A **DeepSeek API Key** in environment variables
+- A configured provider: `api` or `web`
 
 Python dependencies (adjust to your repo):
 - `openai` (OpenAI SDK, used with DeepSeek `base_url`)
 - any local modules in this repo (`tools`, `log`, `config`, etc.)
+
+Provider notes:
+- `provider: "api"` uses the DeepSeek API and requires `DEEPSEEK_API_KEY` or `config.api_key`
+- `provider: "web"` uses the browser-backed web adapter in `core/web_to_api`
 
 ---
 

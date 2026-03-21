@@ -1,5 +1,5 @@
 {
-  "provider": "deepseek_api",
+  "provider": "web",
   "api_key": "sk-a4e084846b83482f85fcc46dc711dfd2",
   "deepseek_api": {
     "base_url": "https://api.deepseek.com",

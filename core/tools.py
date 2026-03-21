@@ -9,6 +9,7 @@ from log import get_logger
 WORKDIR = os.getcwd()
 logger = get_logger("tools")
 
+# Build a standard tool error response.
 def _err(tool: str, e: Exception, **extra) -> Dict[str, Any]:
     # 统一错误返回结构：不抛异常，返回给 agent
     msg = f"{type(e).__name__}: {e}"
@@ -20,6 +21,7 @@ def _err(tool: str, e: Exception, **extra) -> Dict[str, Any]:
     
     return {"ok": False, "output": f"[{tool}] {msg}"}
 
+# Coerce tool text output into safe UTF-8.
 def _sanitize_text(s: Any) -> str:
     # 防止 surrogate/非法字符导致 UnicodeEncodeError
     if s is None:
@@ -28,6 +30,7 @@ def _sanitize_text(s: Any) -> str:
         s = str(s)
     return s.encode("utf-8", "replace").decode("utf-8")
 
+# Resolve a path under the workspace and block escapes.
 def _safe(path: str, base: str = WORKDIR) -> str:
     """把相对路径转成绝对路径，并阻止路径穿越（例如 ../../windows/system32）。"""
     try:
@@ -41,6 +44,7 @@ def _safe(path: str, base: str = WORKDIR) -> str:
         logger.error("路径安全检查失败: {}, base={}", str(e), base)
         raise
 
+# Read a file from the workspace with a size cap.
 def read_file(path: str, max_bytes: int = 120_000):
     try:
         p = _safe(path)
@@ -61,6 +65,7 @@ def read_file(path: str, max_bytes: int = 120_000):
     except Exception as e:
         return _err("read_file", e, path=path, max_bytes=max_bytes)
 
+# Write text content to a workspace file.
 def write_file(path: str, content: str):
     try:
         p = _safe(path)
@@ -77,6 +82,7 @@ def write_file(path: str, content: str):
     except Exception as e:
         return _err("write_file", e, path=path)
 
+# Run a shell command inside the workspace.
 def run_cmd(cmd: str, timeout_sec: int = 60):
     try:
         logger.debug("执行命令: {}, 超时: {} 秒", cmd, timeout_sec)
@@ -105,6 +111,7 @@ def run_cmd(cmd: str, timeout_sec: int = 60):
     except Exception as e:
         return _err("run_cmd", e, cmd=cmd, timeout_sec=timeout_sec)
 
+# Search text with ripgrep and trim oversized output.
 def rg_search(query: str, path: str = ".", max_lines: int = 200):
     try:
         # 先确保 path 合法（防穿越）
@@ -130,6 +137,7 @@ def rg_search(query: str, path: str = ".", max_lines: int = 200):
     except Exception as e:
         return _err("rg_search", e, query=query, path=path, max_lines=max_lines)
 
+# Read a line range with line numbers.
 def read_file_lines(path: str, start_line: int = 0, max_lines: int = 200):
     try:
         p = _safe(path)
@@ -169,6 +177,7 @@ def read_file_lines(path: str, start_line: int = 0, max_lines: int = 200):
     except Exception as e:
         return _err("read_file_lines", e, path=path, start_line=start_line, max_lines=max_lines)
 
+# Copy a file or directory to a new location.
 def copy_file(src: str, dst: str, overwrite: bool = False):
     src_p = Path(src)
     dst_p = Path(dst)
@@ -202,6 +211,7 @@ def copy_file(src: str, dst: str, overwrite: bool = False):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# Move a file or directory to a new location.
 def move_file(src: str, dst: str, overwrite: bool = False):
     src_p = Path(src)
     dst_p = Path(dst)
@@ -236,6 +246,7 @@ def move_file(src: str, dst: str, overwrite: bool = False):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# Delete a file or directory.
 def delete_file(path: str):
     """删除文件或目录"""
     try:
@@ -257,6 +268,7 @@ def delete_file(path: str):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# Create a directory tree if it does not exist.
 def mkdir_p(path: str):
     """创建目录，如果父目录不存在也会创建（类似 mkdir -p）"""
     try:
@@ -272,6 +284,7 @@ def mkdir_p(path: str):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# List directory entries in sorted order.
 def list_dir(path: str = "."):
     """列出某个目录下的文件/文件夹（返回按字母排序的列表）。"""
     try:
@@ -286,6 +299,7 @@ def list_dir(path: str = "."):
     except Exception as e:
         return _err("list_dir", e, path=path)
 
+# Recursively search files with a Python regex.
 def grep_text(pattern: str, path: str = ".", max_matches: int = 50):
     """
     在 path 目录下递归搜索文本 pattern，返回匹配的文件与行号（最多 max_matches 条）。

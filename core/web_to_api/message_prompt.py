@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
 
+# Convert structured values to prompt-safe text.
 def _stringify(value) -> str:
     if value is None:
         return ""
@@ -14,12 +15,14 @@ def _stringify(value) -> str:
         return str(value)
 
 
+# Serialize tool definitions for the web prompt.
 def _format_tool_defs(tool_defs: list[dict]) -> str:
     if not tool_defs:
         return "[]"
     return json.dumps(tool_defs, ensure_ascii=False, indent=2)
 
 
+# Serialize one history message for the web prompt.
 def _format_message(message: dict, index: int) -> str:
     role = message.get("role", "unknown")
     header = [f"## Message {index}", f"role: {role}"]
@@ -44,6 +47,7 @@ def _format_message(message: dict, index: int) -> str:
     return "\n".join(header + [""] + body_parts)
 
 
+# Build the browser prompt from chat history and tools.
 def build_web_chat_prompt(messages: list[dict], tool_defs: list[dict], model: str) -> str:
     history = "\n\n".join(_format_message(message, index) for index, message in enumerate(messages, start=1))
     tools_text = _format_tool_defs(tool_defs)
@@ -61,6 +65,9 @@ def build_web_chat_prompt(messages: list[dict], tool_defs: list[dict], model: st
         "<final>your answer</final>\n"
         "3. Do not wrap the result in Markdown code fences.\n"
         "4. Do not explain the protocol.\n"
+        "5. If the user asks to create, modify, rename, move, or delete project files, you must output a tool_call first.\n"
+        "6. If write_file is available and a file must be changed, use write_file instead of pasting the modified code directly in <final>.\n"
+        "7. The JSON inside <tool_call> must be strictly valid. Escape quotes, backslashes, and newlines inside string arguments. This is especially important for write_file.arguments.content.\n"
         "\n"
         f"Target model label: {model}\n"
         "\n"
@@ -72,3 +79,5 @@ def build_web_chat_prompt(messages: list[dict], tool_defs: list[dict], model: st
         "\n"
         "Now produce the next assistant message only."
     )
+
+

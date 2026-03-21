@@ -8,7 +8,7 @@ from core.message_store import append_message, calc_total_tokens
 from core.message_store import trim_messages as _trim_messages
 from core.token_counter import count_message_tokens as _count_message_tokens
 from core.token_counter import estimate_tokens as _estimate_tokens
-from core.web_to_api.factory import build_provider
+from core.web_to_api.factory import build_provider, normalize_provider_name
 from log import get_logger
 
 CONFIG = load_config()
@@ -18,15 +18,17 @@ MODEL = CONFIG["model"]
 BASE_SYSTEM = CONFIG["base_system"]
 KEEP_LAST = CONFIG.get("keep_last", 4000)
 TOOL_DEFS = CONFIG["tool_defs"]
-PROVIDER = str(CONFIG.get("provider") or "deepseek_api").strip().lower()
+PROVIDER = normalize_provider_name(CONFIG.get("provider"))
 
 
+# Build a compact one-line preview for logs.
 def _preview_text(value, limit=300):
     text = "" if value is None else str(value)
     text = text.replace("\r", "\\r").replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
+# Build and cache the configured chat provider.
 def get_client():
     global _CLIENT
     if _CLIENT is None:
@@ -34,14 +36,17 @@ def get_client():
     return _CLIENT
 
 
+# Estimate token usage with the configured model.
 def estimate_tokens(text: str) -> int:
     return _estimate_tokens(text, MODEL)
 
 
+# Count tokens for one message with the configured model.
 def count_message_tokens(message: dict) -> int:
     return _count_message_tokens(message, MODEL)
 
 
+# Trim message history while preserving the configured token window.
 def trim_messages(messages, keep_last=KEEP_LAST, cached_total_tokens=None, return_total=False):
     return _trim_messages(
         messages,
@@ -52,6 +57,7 @@ def trim_messages(messages, keep_last=KEEP_LAST, cached_total_tokens=None, retur
     )
 
 
+# Collect runtime and platform details for the system prompt.
 def get_system_info():
     system_info = {
         "os": platform.system(),
@@ -86,12 +92,14 @@ def get_system_info():
     return "\n".join(lines)
 
 
+# Create the initial system message for a new session.
 def build_initial_session():
     system_info = get_system_info()
     full_system = BASE_SYSTEM + f"\n\nCurrent working directory: {os.getcwd()}\n\nSystem info:\n{system_info}"
     return [{"role": "system", "content": full_system}]
 
 
+# Normalize arbitrary input into safe UTF-8 text.
 def sanitize_text(s):
     if s is None:
         return ""
@@ -99,7 +107,8 @@ def sanitize_text(s):
         s = str(s)
     return s.encode("utf-8", "replace").decode("utf-8")
 
-
+# 获取最后一次ai的消息
+# Return the latest non-empty assistant message.
 def get_last_assistant_text(messages):
     for message in reversed(messages):
         if message.get("role") != "assistant":
@@ -110,9 +119,10 @@ def get_last_assistant_text(messages):
     return ""
 
 
+# Run one agent task against the current session.
 def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = True, session=None, echo_output=True):
     logger = get_logger()
-    if PROVIDER == "deepseek_web" and enable_thinking_stream:
+    if PROVIDER == "web" and enable_thinking_stream:
         logger.warning("DeepSeek web provider does not support thinking stream; disabling it")
         enable_thinking_stream = False
 
@@ -157,9 +167,14 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
     logger.info("[Step {}] {} total time: {:.3f}s", step, content if content else "(empty)", dt)
     logger.info("Task completed in {:.3f}s", dt)
 
+    final_reply = get_last_assistant_text(messages)
+    if final_reply:
+        logger.agent(final_reply)
+
     return messages
 
 
+# Run the agent and return only the final reply text.
 def run_agent_and_get_reply(task: str, max_steps: int = 18, enable_thinking_stream: bool = False, session=None):
     messages = run_agent(
         task=task,

@@ -5,10 +5,28 @@ import os
 from core.web_to_api.deepseek_web_client import DeepSeekWebClient, DeepSeekWebClientConfig
 
 
-def build_provider(config: dict):
-    provider_name = str(config.get("provider") or "deepseek_api").strip().lower()
+# Normalize provider aliases to api or web.
+def normalize_provider_name(provider_name: str | None) -> str:
+    value = str(provider_name or "api").strip().lower()
+    aliases = {
+        "api": "api",
+        "deepseek_api": "api",
+        "web": "web",
+        "deepseek_web": "web",
+    }
+    try:
+        return aliases[value]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported provider: {provider_name}. Supported values: api, web."
+        ) from exc
 
-    if provider_name == "deepseek_api":
+
+# Build the configured chat provider instance.
+def build_provider(config: dict):
+    provider_name = normalize_provider_name(config.get("provider"))
+
+    if provider_name == "api":
         from core.web_to_api.deepseek_api_provider import DeepSeekApiProvider
 
         api_config = config.get("deepseek_api") or {}
@@ -23,7 +41,7 @@ def build_provider(config: dict):
         temperature = float(api_config.get("temperature", 0.2))
         return DeepSeekApiProvider(api_key=api_key, base_url=base_url, temperature=temperature)
 
-    if provider_name == "deepseek_web":
+    if provider_name == "web":
         from core.web_to_api.deepseek_web_provider import DeepSeekWebProvider
 
         web_config = config.get("deepseek_web") or {}
@@ -51,8 +69,12 @@ def build_provider(config: dict):
                 web_config.get("assistant_message_selectors") or defaults.assistant_message_selectors
             ),
             loading_selectors=tuple(web_config.get("loading_selectors") or defaults.loading_selectors),
+            keep_alive_url=web_config.get("keep_alive_url") or defaults.keep_alive_url,
+            new_chat_url=web_config.get("new_chat_url"),
+            new_chat_timeout_ms=int(web_config.get("new_chat_timeout_ms", defaults.new_chat_timeout_ms)),
+            new_chat_selectors=tuple(web_config.get("new_chat_selectors") or defaults.new_chat_selectors),
         )
 
         return DeepSeekWebProvider(DeepSeekWebClient(client_config))
 
-    raise ValueError(f"Unsupported provider: {provider_name}")
+    raise ValueError(f"Unsupported provider: {provider_name}. Supported values: api, web.")
