@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 
 from log import get_logger
@@ -24,14 +24,13 @@ INVALID_TOOL_CALL_JSON_TEXT = (
 )
 
 
-# Build a compact text preview for loop logs.
+# 生成主循环日志用的精简文本预览。
 def _preview_text(value, limit=300):
     text = "" if value is None else str(value)
     text = text.replace("\r", "\\r").replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
-#解析工具调用
-# Extract one tagged tool call from assistant content.
+# 从 assistant 文本中提取一个工具调用标签。
 def parse_tool_call(content: str):
     match = CALL_RE.search(content or "")
     if not match:
@@ -53,13 +52,13 @@ def parse_tool_call(content: str):
     return name, obj.get("arguments", {})
 
 
-# Extract the final tagged answer from assistant content.
+# 从 assistant 文本中提取最终回答标签。
 def parse_final(content: str):
     match = FINAL_RE.search(content or "")
     return match.group(1) if match else None
 
 
-# Return the most recent user message text.
+# 获取最近一条用户消息文本。
 def _latest_user_text(messages) -> str:
     for message in reversed(messages):
         if message.get("role") == "user":
@@ -68,7 +67,7 @@ def _latest_user_text(messages) -> str:
     return ""
 
 
-# Collect available tool names from tool definitions.
+# 收集当前工具定义中的工具名称。
 def _tool_names(tool_defs) -> set[str]:
     names = set()
     for tool in tool_defs or []:
@@ -79,7 +78,7 @@ def _tool_names(tool_defs) -> set[str]:
     return names
 
 
-# Detect when the latest user request likely needs a file write.
+# 判断最近的用户请求是否需要写文件。
 def _user_request_requires_file_write(messages, tool_defs) -> bool:
     latest_user = _latest_user_text(messages).strip()
     if not latest_user:
@@ -91,12 +90,12 @@ def _user_request_requires_file_write(messages, tool_defs) -> bool:
     return "write_file" in _tool_names(tool_defs)
 
 
-# Check whether a specific system reminder is already present.
+# 检查指定的 system 提示是否已经存在。
 def _has_system_note(messages, note: str) -> bool:
     return any(message.get("role") == "system" and message.get("content") == note for message in messages)
 
 
-# Execute one tool call and append its result to the history.
+# 执行一次工具调用并把结果写回历史。
 def handle_tool_call(tc, name, args, messages, total_tokens, keep_last, model):
     logger = get_logger()
 
@@ -158,7 +157,7 @@ def handle_tool_call(tc, name, args, messages, total_tokens, keep_last, model):
     return messages, total_tokens
 
 
-# Drive the agent loop until completion or step limit.
+# 驱动主循环直到完成或达到步数上限。
 def run_main_loop(
     client,
     model,

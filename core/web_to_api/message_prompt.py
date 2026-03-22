@@ -1,9 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 
 
-# Convert structured values to prompt-safe text.
+# 将结构化值转换为适合 prompt 的文本。
 def _stringify(value) -> str:
     if value is None:
         return ""
@@ -15,14 +15,14 @@ def _stringify(value) -> str:
         return str(value)
 
 
-# Serialize tool definitions for the web prompt.
+# 序列化工具定义供网页 prompt 使用。
 def _format_tool_defs(tool_defs: list[dict]) -> str:
     if not tool_defs:
         return "[]"
     return json.dumps(tool_defs, ensure_ascii=False, indent=2)
 
 
-# Serialize one history message for the web prompt.
+# 序列化一条历史消息供网页 prompt 使用。
 def _format_message(message: dict, index: int) -> str:
     role = message.get("role", "unknown")
     header = [f"## Message {index}", f"role: {role}"]
@@ -47,7 +47,7 @@ def _format_message(message: dict, index: int) -> str:
     return "\n".join(header + [""] + body_parts)
 
 
-# Build the browser prompt from chat history and tools.
+# 根据历史消息和工具构建网页模式 prompt。
 def build_web_chat_prompt(messages: list[dict], tool_defs: list[dict], model: str) -> str:
     history = "\n\n".join(_format_message(message, index) for index, message in enumerate(messages, start=1))
     tools_text = _format_tool_defs(tool_defs)

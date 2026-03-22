@@ -8,14 +8,14 @@ from agent import MODEL, build_initial_session, run_agent_and_get_reply
 from log import get_logger
 
 
-# Build a compact text preview for socket logs.
+# 生成 socket 日志用的精简文本预览。
 def _preview_text(value, limit=500):
     text = "" if value is None else str(value)
     text = text.replace("\r", "\\r").replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
-# Serialize request data for safe preview logging.
+# 将请求对象序列化为日志预览文本。
 def _preview_json(value, limit=500):
     try:
         text = json.dumps(value, ensure_ascii=False)
@@ -25,12 +25,12 @@ def _preview_json(value, limit=500):
 
 
 class SessionManager:
-    # Initialize in-memory session storage.
+# 初始化内存中的会话存储。
     def __init__(self):
         self._lock = threading.Lock()
         self._sessions: Dict[str, List[dict]] = {}
 
-    # Return a copy of the session, creating one if needed.
+# 读取指定会话，不存在时自动创建。
     def get(self, session_id: str):
         with self._lock:
             session = self._sessions.get(session_id)
@@ -39,12 +39,12 @@ class SessionManager:
                 self._sessions[session_id] = session
             return session.copy()
 
-    # Store the updated session state for a client.
+# 保存客户端对应的最新会话状态。
     def set(self, session_id: str, session):
         with self._lock:
             self._sessions[session_id] = session.copy()
 
-    # Reset a session back to its initial state.
+# 将会话重置为初始状态。
     def reset(self, session_id: str):
         with self._lock:
             self._sessions[session_id] = build_initial_session()
@@ -54,7 +54,7 @@ SESSION_MANAGER = SessionManager()
 
 
 class JsonLineTCPHandler(socketserver.StreamRequestHandler):
-    # Read newline-delimited JSON requests from the socket.
+# 持续读取按行分隔的 JSON socket 请求。
     def handle(self):
         logger = get_logger()
         client_addr = f"{self.client_address[0]}:{self.client_address[1]}"
@@ -101,7 +101,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
 
         logger.info("socket client disconnected: {}", client_addr)
 
-    # Parse one raw request and send one JSON response.
+# 处理一条原始请求并回写 JSON 响应。
     def _process_and_respond(self, client_addr: str, raw: bytes):
         logger = get_logger()
         logger.info("socket raw request from {}: {}", client_addr, _preview_text(raw.decode("utf-8", errors="replace")))
@@ -121,7 +121,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write((json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8"))
         self.wfile.flush()
 
-    # Dispatch supported socket actions to the agent.
+# 分发 socket 请求到对应的 agent 行为。
     def process_request(self, request: dict):
         logger = get_logger()
         action = request.get("action", "chat")
@@ -167,7 +167,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         }
 
 
-# Start the JSON line TCP server.
+# 启动 JSON 行协议的 TCP 服务。
 def main():
     parser = argparse.ArgumentParser(description="JSON socket server for agent_for_minecraft")
     parser.add_argument("--host", default="127.0.0.1")

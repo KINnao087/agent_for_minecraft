@@ -10,11 +10,11 @@ from core.web_to_api.message_prompt import build_web_chat_prompt
 
 
 class DeepSeekWebProvider(BaseChatProvider):
-    # Wrap the browser client as a chat provider.
+# 将浏览器客户端封装为对话 provider。
     def __init__(self, web_client: DeepSeekWebClient):
         self._web_client = web_client
 
-    # Send one chat request through the browser workflow.
+# 通过浏览器工作流发送一次对话请求。
     def chat(
         self,
         model: str,
@@ -31,7 +31,7 @@ class DeepSeekWebProvider(BaseChatProvider):
         reply_text = self._web_client.ask(prompt)
         return ChatResult(content=reply_text.strip(), tool_calls=[], reasoning_content="")
 
-    # Build a compact preview for web provider logs.
+# 生成网页 provider 日志用的精简预览。
     @staticmethod
     def _preview_text(value: str, limit: int = 300) -> str:
         text = "" if value is None else str(value)

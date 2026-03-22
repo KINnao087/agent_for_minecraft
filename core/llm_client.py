@@ -1,4 +1,4 @@
-# Forward chat requests to the active provider.
+# 将对话请求转发给当前 provider。
 def deepseek_chat(client, model, tool_defs, messages, stream_thinking_callback=None):
     return client.chat(
         model=model,

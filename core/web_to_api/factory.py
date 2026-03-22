@@ -5,7 +5,7 @@ import os
 from core.web_to_api.deepseek_web_client import DeepSeekWebClient, DeepSeekWebClientConfig
 
 
-# Normalize provider aliases to api or web.
+# 将 provider 别名规范化为 api 或 web。
 def normalize_provider_name(provider_name: str | None) -> str:
     value = str(provider_name or "api").strip().lower()
     aliases = {
@@ -22,7 +22,7 @@ def normalize_provider_name(provider_name: str | None) -> str:
         ) from exc
 
 
-# Build the configured chat provider instance.
+# 根据配置构建对应的对话 provider。
 def build_provider(config: dict):
     provider_name = normalize_provider_name(config.get("provider"))
 

@@ -53,7 +53,7 @@ class Color:
 
 
 class Logger:
-    # Initialize logger state and stream buffers.
+# 初始化 logger 状态和流式缓冲区。
     def __init__(self, name: str = "agent"):
         self.name = name
         self.level = LogLevel.INFO
@@ -61,7 +61,7 @@ class Logger:
         self.thinking_callback: Optional[Callable[[str], None]] = None
         self.thinking_buffer = ""
 
-    # Return the ANSI color for a log level.
+# 返回指定日志级别对应的 ANSI 颜色。
     def _get_color(self, level: LogLevel) -> str:
         if not self.enable_color:
             return ""
@@ -77,7 +77,7 @@ class Logger:
         }
         return color_map.get(level, Color.RESET)
 
-    # Format one log line with time, level, and caller.
+# 组装包含时间、级别和调用位置的日志行。
     def _format_message(self, level: LogLevel, message: str) -> str:
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         color = self._get_color(level)
@@ -85,7 +85,7 @@ class Logger:
         location = self._caller_location()
         return f"{color}[{timestamp}] [{level.value}] [{self.name}] [{location}] {message}{reset}"
 
-    # Check whether the current level allows this message.
+# 判断当前级别是否需要输出日志。
     def _should_log(self, level: LogLevel) -> bool:
         level_order = {
             LogLevel.DEBUG: 0,
@@ -98,7 +98,7 @@ class Logger:
         }
         return level_order.get(level, 0) >= level_order.get(self.level, 0)
 
-    # Render and print one log message.
+# 渲染并输出一条日志消息。
     def log(self, level: LogLevel, message: str, *args, **kwargs):
         if not self._should_log(level):
             return
@@ -108,7 +108,7 @@ class Logger:
         output = sys.stderr if level in [LogLevel.ERROR, LogLevel.CRITICAL] else sys.stdout
         print(formatted_msg, file=output)
 
-    # Safely format a log message with optional arguments.
+# 安全地格式化带参数的日志消息。
     def _render_message(self, message: object, *args, **kwargs) -> str:
         if message is None:
             text = ""
@@ -128,7 +128,7 @@ class Logger:
                 f"args={args!r}; kwargs={kwargs!r}]"
             )
 
-    # Return the first non-logger caller location.
+# 返回第一个非 logger 内部的调用位置。
     def _caller_location(self) -> str:
         current_file = Path(__file__).resolve()
         frame = inspect.currentframe()
@@ -144,35 +144,35 @@ class Logger:
         finally:
             del frame
 
-    # Log a debug message.
+# 输出调试日志。
     def debug(self, message: str, *args, **kwargs):
         self.log(LogLevel.DEBUG, message, *args, **kwargs)
 
-    # Log an info message.
+# 输出普通信息日志。
     def info(self, message: str, *args, **kwargs):
         self.log(LogLevel.INFO, message, *args, **kwargs)
 
-    # Log an agent-facing message.
+# 输出 agent 专用日志。
     def agent(self, message: str, *args, **kwargs):
         self.log(LogLevel.AGENT, message, *args, **kwargs)
 
-    # Log a warning message.
+# 输出警告日志。
     def warning(self, message: str, *args, **kwargs):
         self.log(LogLevel.WARNING, message, *args, **kwargs)
 
-    # Log an error message.
+# 输出错误日志。
     def error(self, message: str, *args, **kwargs):
         self.log(LogLevel.ERROR, message, *args, **kwargs)
 
-    # Log a critical message.
+# 输出严重错误日志。
     def critical(self, message: str, *args, **kwargs):
         self.log(LogLevel.CRITICAL, message, *args, **kwargs)
 
-    # Log a thinking message.
+# 输出思考流日志。
     def thinking(self, message: str, *args, **kwargs):
         self.log(LogLevel.THINKING, message, *args, **kwargs)
 
-    # Start streaming thinking output on one line.
+# 开始输出单行思考流。
     def start_thinking_stream(self):
         self.thinking_buffer = ""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -180,7 +180,7 @@ class Logger:
         prefix = f"{color}[{timestamp}] [{LogLevel.THINKING.value}] [{self.name}] "
         print(prefix, end="", flush=True)
 
-    # Append one thinking chunk to the live stream.
+# 追加一段思考流内容。
     def stream_thinking(self, chunk: str):
         if not chunk:
             return
@@ -191,7 +191,7 @@ class Logger:
         if self.thinking_callback:
             self.thinking_callback(chunk)
 
-    # Finish the live thinking stream.
+# 结束当前思考流输出。
     def end_thinking_stream(self):
         reset = Color.RESET if self.enable_color else ""
         print(reset, flush=True)
@@ -201,11 +201,11 @@ class Logger:
 
         self.thinking_buffer = ""
 
-    # Set the minimum log level.
+# 设置最小日志级别。
     def set_level(self, level: LogLevel):
         self.level = level
 
-    # Register a callback for thinking output.
+# 注册思考流回调函数。
     def set_thinking_callback(self, callback: Callable[[str], None]):
         self.thinking_callback = callback
 
@@ -213,69 +213,69 @@ class Logger:
 _default_logger = Logger()
 
 
-# Return the shared default logger or a new named logger.
+# 返回默认 logger 或创建具名 logger。
 def get_logger(name: str = "agent") -> Logger:
     if name == "agent":
         return _default_logger
     return Logger(name)
 
 
-# Proxy debug logging to the default logger.
+# 将 debug 调用转发到默认 logger。
 def debug(message: str, *args, **kwargs):
     _default_logger.debug(message, *args, **kwargs)
 
 
-# Proxy info logging to the default logger.
+# 将 info 调用转发到默认 logger。
 def info(message: str, *args, **kwargs):
     _default_logger.info(message, *args, **kwargs)
 
 
-# Proxy agent logging to the default logger.
+# 将 agent 调用转发到默认 logger。
 def agent(message: str, *args, **kwargs):
     _default_logger.agent(message, *args, **kwargs)
 
 
-# Proxy warning logging to the default logger.
+# 将 warning 调用转发到默认 logger。
 def warning(message: str, *args, **kwargs):
     _default_logger.warning(message, *args, **kwargs)
 
 
-# Proxy error logging to the default logger.
+# 将 error 调用转发到默认 logger。
 def error(message: str, *args, **kwargs):
     _default_logger.error(message, *args, **kwargs)
 
 
-# Proxy critical logging to the default logger.
+# 将 critical 调用转发到默认 logger。
 def critical(message: str, *args, **kwargs):
     _default_logger.critical(message, *args, **kwargs)
 
 
-# Proxy thinking logging to the default logger.
+# 将 thinking 调用转发到默认 logger。
 def thinking(message: str, *args, **kwargs):
     _default_logger.thinking(message, *args, **kwargs)
 
 
-# Start the default logger thinking stream.
+# 启动默认 logger 的思考流。
 def start_thinking_stream():
     _default_logger.start_thinking_stream()
 
 
-# Forward a thinking chunk to the default logger.
+# 向默认 logger 转发一段思考流。
 def stream_thinking(chunk: str):
     _default_logger.stream_thinking(chunk)
 
 
-# Finish the default logger thinking stream.
+# 结束默认 logger 的思考流。
 def end_thinking_stream():
     _default_logger.end_thinking_stream()
 
 
-# Set the level on the default logger.
+# 设置默认 logger 的级别。
 def set_log_level(level: LogLevel):
     _default_logger.set_level(level)
 
 
-# Set the thinking callback on the default logger.
+# 设置默认 logger 的思考流回调。
 def set_thinking_callback(callback: Callable[[str], None]):
     _default_logger.set_thinking_callback(callback)
 

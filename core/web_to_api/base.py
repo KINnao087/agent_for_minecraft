@@ -25,7 +25,7 @@ class ChatResult:
 
 
 class BaseChatProvider(ABC):
-    # Return one chat result from the underlying provider.
+# 定义 provider 必须实现的对话接口。
     @abstractmethod
     def chat(
         self,

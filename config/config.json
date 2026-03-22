@@ -1,5 +1,5 @@
 {
-  "provider": "web",
+  "provider": "api",
   "api_key": "sk-a4e084846b83482f85fcc46dc711dfd2",
   "deepseek_api": {
     "base_url": "https://api.deepseek.com",
@@ -45,7 +45,7 @@
     ]
   },
   "model": "deepseek-chat",
-  "base_system": "你是代码工具 Agent。\n只允许两种输出：\n1. <tool_call>{\"name\":\"...\",\"arguments\":{...}}</tool_call>\n2. <final>...</final>\n\n规则：\n- 先判断是否真的需要工具，不是所有问题都需要使用工具。\n- 只要需要文件、目录或命令结果，就先调用工具，不要猜。\n- 不确定内容时优先 rg_search，再使用read_file_lines，最终若还是没有结果或者需要更多信息则使用read_file\n- 修改后用 write_file 回写完整文件，关键修改后用 run_cmd 验证。\n- 每轮最多调用一个工具，拿到结果后再继续。\n- 若发现xx命令不是外部命令之类的，提示用户安装相关命令插件，并告知用户在当前环境下如何安装\n",
+  "base_system": "你是代码工具 Agent。\n只允许两种输出：\n1. <tool_call>{\"name\":\"...\",\"arguments\":{...}}</tool_call>\n2. <final>...</final>\n\n规则：\n- 先判断是否真的需要工具，不是所有问题都需要使用工具。\n- 只要需要文件、目录或命令结果，就先调用工具，不要猜。\n- 不确定内容时优先 rg_search，再使用read_file_lines，最终若还是没有结果或者需要更多信息则使用read_file\n- 修改后用 write_file 回写完整文件，关键修改后用 run_cmd 验证。\n- 当输出 <tool_call> 时，name 必须保持原始工具名；arguments 中每个键对应的 value 都必须先转成 UTF-8，再编码为 base64，最后以 JSON 字符串形式输出。\n- 不要在 arguments 里直接输出原始文本、原始代码、数字、布尔值或未编码的特殊字符；统一输出 base64 字符串。\n- 例如：<tool_call>{\"name\":\"write_file\",\"arguments\":{\"path\":\"YWdlbnQucHk=\",\"content\":\"cHJpbnQoJ2hlbGxvJykK\"}}</tool_call>\n- 每轮最多调用一个工具，拿到结果后再继续。\n- 若发现xx命令不是外部命令之类的，提示用户安装相关命令插件，并告知用户在当前环境下如何安装\n",
   "keep_last": 4000,
   "tool_defs": [
     {

@@ -78,7 +78,7 @@ class DeepSeekWebClient:
     TOOL_CALL_BLOCK_RE = re.compile(r"<tool_call>\s*\{.*?\}\s*</tool_call>", re.S)
     FINAL_BLOCK_RE = re.compile(r"<final>\s*.*?\s*</final>", re.S)
 
-    # Initialize the persistent Playwright client state.
+# 初始化持久化的 Playwright 客户端状态。
     def __init__(self, config: DeepSeekWebClientConfig):
         self._config = config
         self._playwright = None
@@ -87,7 +87,7 @@ class DeepSeekWebClient:
         self._lock = threading.RLock()
         atexit.register(self.close)
 
-    # Open a fresh chat page, send the prompt, and return the reply.
+# 打开新会话页面、发送 prompt 并返回回复。
     def ask(self, prompt: str) -> str:
         logger = get_logger()
         with self._lock:
@@ -115,7 +115,7 @@ class DeepSeekWebClient:
             logger.info("DeepSeek web reply preview: {}", self._preview_text(reply))
             return reply
 
-    # Close the cached Playwright page, context, and driver.
+# 关闭缓存的页面、上下文和 Playwright 实例。
     def close(self):
         with self._lock:
             page = self._page
@@ -141,20 +141,20 @@ class DeepSeekWebClient:
         except Exception:
             pass
 
-    # Resolve the browser profile directory to an absolute path.
+# 将浏览器用户目录解析为绝对路径。
     def _resolve_user_data_dir(self) -> Path:
         path = Path(self._config.user_data_dir)
         if path.is_absolute():
             return path
-        # Keep relative profile paths stable regardless of the current working directory.
+        # 让相对 profile 路径不受当前工作目录影响。
         return self._project_root() / path
 
-    # Return the project root used for relative profile paths.
+# 返回用于解析相对路径的项目根目录。
     @staticmethod
     def _project_root() -> Path:
         return Path(__file__).resolve().parents[2]
 
-    # Reuse or create a live page for browser automation.
+# 复用或创建可用的浏览器页面。
     def _ensure_page(self):
         if self._has_live_page():
             return self._page, self._timeout_error_class()
@@ -165,7 +165,7 @@ class DeepSeekWebClient:
         self._page = page
         return page, self._timeout_error_class()
 
-    # Reuse or launch the persistent browser context.
+# 复用或启动持久化浏览器上下文。
     def _ensure_context(self):
         if self._has_live_context():
             return self._context
@@ -221,7 +221,7 @@ class DeepSeekWebClient:
             pass
         return context
 
-    # Check whether the cached browser context is still usable.
+# 判断缓存的浏览器上下文是否仍可用。
     def _has_live_context(self) -> bool:
         if self._context is None:
             return False
@@ -231,7 +231,7 @@ class DeepSeekWebClient:
         except Exception:
             return False
 
-    # Check whether the cached browser page is still usable.
+# 判断缓存的浏览器页面是否仍可用。
     def _has_live_page(self) -> bool:
         if self._page is None:
             return False
@@ -240,7 +240,7 @@ class DeepSeekWebClient:
         except Exception:
             return False
 
-    # Load Playwright's timeout exception type.
+# 获取 Playwright 的超时异常类型。
     def _timeout_error_class(self):
         try:
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -250,7 +250,7 @@ class DeepSeekWebClient:
             ) from exc
         return PlaywrightTimeoutError
 
-    # Try to click the new chat control before sending.
+# 发送前尝试点击“新对话”按钮。
     def _maybe_start_new_chat(self, page):
         deadline = time.monotonic() + (self._config.new_chat_timeout_ms / 1000)
         while time.monotonic() < deadline:
@@ -266,7 +266,7 @@ class DeepSeekWebClient:
                 page.wait_for_timeout(250)
         return False
 
-    # Wait until an input box becomes available.
+# 等待输入框出现在页面上。
     def _wait_for_input_box(self, page, timeout_error_cls):
         deadline = time.monotonic() + (self._config.input_ready_timeout_ms / 1000)
         last_error = None
@@ -279,7 +279,7 @@ class DeepSeekWebClient:
             "Unable to find the DeepSeek input box. Check login state or adjust input selectors."
         ) from last_error
 
-    # Return the first visible locator that matches the selectors.
+# 返回第一个可见的匹配 locator。
     def _find_first_visible(self, page, selectors: Iterable[str]):
         for selector in selectors:
             locator = page.locator(selector)
@@ -295,7 +295,7 @@ class DeepSeekWebClient:
                     continue
         return None
 
-    # Fill the prompt into the chat input.
+# 将 prompt 填入聊天输入框。
     def _fill_prompt(self, page, input_box, prompt: str):
         try:
             input_box.click()
@@ -312,7 +312,7 @@ class DeepSeekWebClient:
             pass
         page.keyboard.insert_text(prompt)
 
-    # Submit the current prompt through the UI.
+# 通过页面 UI 提交当前 prompt。
     def _send_prompt(self, page, input_box):
         send_button = self._find_send_button(page, input_box)
         if send_button is not None:
@@ -320,7 +320,7 @@ class DeepSeekWebClient:
             return
         input_box.press("Enter")
 
-    # Find the best visible send button near the input.
+# 查找最合适的发送按钮。
     def _find_send_button(self, page, input_box):
         try:
             form = input_box.locator("xpath=ancestor::form[1]")
@@ -331,7 +331,7 @@ class DeepSeekWebClient:
             pass
         return self._find_first_visible(page, self._config.send_button_selectors)
 
-    # Wait until the assistant reply stabilizes.
+# 等待 assistant 回复稳定下来。
     def _wait_for_reply(self, page, previous_reply: str) -> str:
         deadline = time.monotonic() + (self._config.reply_timeout_ms / 1000)
         last_text = ""
@@ -360,12 +360,12 @@ class DeepSeekWebClient:
 
         raise TimeoutError("Timed out while waiting for the DeepSeek web reply.")
 
-    # Check whether the page is still generating a reply.
+# 判断页面是否仍在生成回复。
     def _has_loading_indicator(self, page) -> bool:
         indicator = self._find_first_visible(page, self._config.loading_selectors)
         return indicator is not None
 
-    # Extract the latest visible assistant message text.
+# 提取最新的可见 assistant 文本。
     def _extract_latest_reply_text(self, page) -> str:
         texts = []
         for selector in self._config.assistant_message_selectors:
@@ -395,13 +395,13 @@ class DeepSeekWebClient:
 
         return unique_texts[-1] if unique_texts else ""
 
-    # Clean duplicated browser text before parsing.
+# 清理网页重复渲染的回复文本。
     def _normalize_reply_text(self, text: str) -> str:
         normalized = (text or "").replace("\r\n", "\n").strip()
         if not normalized:
             return ""
 
-        # Some page layouts expose the same assistant block twice in one container.
+        # 某些页面布局会在同一个容器里重复渲染 assistant 内容。
         lines = [line.strip() for line in normalized.split("\n") if line.strip()]
         if lines:
             canonical_lines = [self._canonicalize_text(line) for line in lines]
@@ -432,18 +432,18 @@ class DeepSeekWebClient:
 
         return normalized
 
-    # Collapse repeated tagged blocks into one copy.
+# 将重复的标签块折叠为一份。
     def _collapse_duplicate_tag_blocks(self, text: str, pattern) -> str:
         blocks = [match.strip() for match in pattern.findall(text or "")]
         if len(blocks) >= 2 and len(set(blocks)) == 1:
             return blocks[0]
         return text
 
-    # Normalize text for duplicate detection.
+# 规范化文本以便进行重复判断。
     def _canonicalize_text(self, text: str) -> str:
         return re.sub(r"[\s\u200b\u200c\u200d\ufeff]+", "", text or "")
 
-    # Build a compact preview for browser logs.
+# 生成浏览器日志用的精简预览。
     @staticmethod
     def _preview_text(value: str, limit: int = 300) -> str:
         text = "" if value is None else str(value)

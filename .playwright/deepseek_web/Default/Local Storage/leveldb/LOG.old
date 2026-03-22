@@ -1,3 +1,6 @@
-2026/03/20-20:55:56.777 81e8 Reusing MANIFEST D:\pywork\agent_for_minecraft\.playwright\deepseek_web\Default\Local Storage\leveldb/MANIFEST-000001
-2026/03/20-20:55:56.780 81e8 Recovering log #4
-2026/03/20-20:55:56.781 81e8 Reusing old log D:\pywork\agent_for_minecraft\.playwright\deepseek_web\Default\Local Storage\leveldb/000004.log 
+2026/03/20-20:56:49.468 23d0 Reusing MANIFEST D:\pywork\agent_for_minecraft\.playwright\deepseek_web\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/20-20:56:49.471 23d0 Recovering log #4
+2026/03/20-20:56:49.473 23d0 Reusing old log D:\pywork\agent_for_minecraft\.playwright\deepseek_web\Default\Local Storage\leveldb/000004.log 
+2026/03/20-21:00:07.351 c420 Level-0 table #8: started
+2026/03/20-21:00:07.354 c420 Level-0 table #8: 13623 bytes OK
+2026/03/20-21:00:07.355 c420 Delete type=0 #4

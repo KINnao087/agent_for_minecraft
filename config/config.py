@@ -4,7 +4,7 @@ from pathlib import Path
 from log import get_logger
 
 
-# Load and validate the project configuration file.
+# 加载并校验项目配置文件。
 def load_config(config_path=None):
     logger = get_logger()
     if config_path is None:

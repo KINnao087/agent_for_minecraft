@@ -8,14 +8,14 @@ from core.web_to_api.base import BaseChatProvider, ChatResult, ToolCall, ToolFun
 
 
 class DeepSeekApiProvider(BaseChatProvider):
-    # Create the DeepSeek API client.
+# 初始化 DeepSeek API 客户端。
     def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com", temperature: float = 0.2):
         from openai import OpenAI
 
         self._client = OpenAI(api_key=api_key, base_url=base_url)
         self._temperature = temperature
 
-    # Send one chat request through the DeepSeek API.
+# 通过 DeepSeek API 发送一次对话请求。
     def chat(
         self,
         model: str,
