@@ -2,14 +2,13 @@ import os
 import platform
 import time
 
-from openai import OpenAI
-
 from config.config import load_config
 from core.agent_loop import run_main_loop
 from core.message_store import append_message, calc_total_tokens
 from core.message_store import trim_messages as _trim_messages
 from core.token_counter import count_message_tokens as _count_message_tokens
 from core.token_counter import estimate_tokens as _estimate_tokens
+from core.web_to_api.factory import build_provider, normalize_provider_name
 from log import get_logger
 
 CONFIG = load_config()
@@ -19,35 +18,35 @@ MODEL = CONFIG["model"]
 BASE_SYSTEM = CONFIG["base_system"]
 KEEP_LAST = CONFIG.get("keep_last", 4000)
 TOOL_DEFS = CONFIG["tool_defs"]
-API_KEY = os.environ.get("DEEPSEEK_API_KEY") or CONFIG.get("api_key")
+PROVIDER = normalize_provider_name(CONFIG.get("provider"))
 
 
+# 生成适合日志输出的单行预览文本。
 def _preview_text(value, limit=300):
     text = "" if value is None else str(value)
     text = text.replace("\r", "\\r").replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
+# 构建并缓存当前配置的对话 provider。
 def get_client():
     global _CLIENT
     if _CLIENT is None:
-        if not API_KEY:
-            raise RuntimeError("Missing DeepSeek API key. Set DEEPSEEK_API_KEY or config.api_key.")
-        _CLIENT = OpenAI(
-            api_key=API_KEY,
-            base_url="https://api.deepseek.com",
-        )
+        _CLIENT = build_provider(CONFIG)
     return _CLIENT
 
 
+# 使用当前模型估算文本 token 数量。
 def estimate_tokens(text: str) -> int:
     return _estimate_tokens(text, MODEL)
 
 
+# 使用当前模型统计单条消息的 token 数量。
 def count_message_tokens(message: dict) -> int:
     return _count_message_tokens(message, MODEL)
 
 
+# 在保留最近上下文的前提下裁剪消息历史。
 def trim_messages(messages, keep_last=KEEP_LAST, cached_total_tokens=None, return_total=False):
     return _trim_messages(
         messages,
@@ -58,6 +57,7 @@ def trim_messages(messages, keep_last=KEEP_LAST, cached_total_tokens=None, retur
     )
 
 
+# 收集写入系统提示词的运行环境信息。
 def get_system_info():
     system_info = {
         "os": platform.system(),
@@ -92,12 +92,14 @@ def get_system_info():
     return "\n".join(lines)
 
 
+# 为新会话创建初始系统消息。
 def build_initial_session():
     system_info = get_system_info()
     full_system = BASE_SYSTEM + f"\n\nCurrent working directory: {os.getcwd()}\n\nSystem info:\n{system_info}"
     return [{"role": "system", "content": full_system}]
 
 
+# 将任意输入规范化为安全的 UTF-8 文本。
 def sanitize_text(s):
     if s is None:
         return ""
@@ -105,7 +107,7 @@ def sanitize_text(s):
         s = str(s)
     return s.encode("utf-8", "replace").decode("utf-8")
 
-
+# 获取最后一条非空的 assistant 回复。
 def get_last_assistant_text(messages):
     for message in reversed(messages):
         if message.get("role") != "assistant":
@@ -116,13 +118,18 @@ def get_last_assistant_text(messages):
     return ""
 
 
+# 运行一次 agent 任务并更新会话。
 def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = True, session=None, echo_output=True):
     logger = get_logger()
+    if PROVIDER == "web" and enable_thinking_stream:
+        logger.warning("DeepSeek web provider does not support thinking stream; disabling it")
+        enable_thinking_stream = False
 
     messages = session.copy() if session else build_initial_session()
     total_tokens = calc_total_tokens(messages, MODEL)
     logger.info(
-        "Prepare agent run: max_steps={}, stream={}, existing_messages={}, total_tokens={}",
+        "Prepare agent run: provider={}, max_steps={}, stream={}, existing_messages={}, total_tokens={}",
+        PROVIDER,
         max_steps,
         enable_thinking_stream,
         len(messages),
@@ -159,9 +166,14 @@ def run_agent(task: str, max_steps: int = 18, enable_thinking_stream: bool = Tru
     logger.info("[Step {}] {} total time: {:.3f}s", step, content if content else "(empty)", dt)
     logger.info("Task completed in {:.3f}s", dt)
 
+    final_reply = get_last_assistant_text(messages)
+    if final_reply:
+        logger.agent(final_reply)
+
     return messages
 
 
+# 运行 agent 并只返回最终回复文本。
 def run_agent_and_get_reply(task: str, max_steps: int = 18, enable_thinking_stream: bool = False, session=None):
     messages = run_agent(
         task=task,

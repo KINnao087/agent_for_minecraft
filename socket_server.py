@@ -4,16 +4,18 @@ import socketserver
 import threading
 from typing import Dict, List
 
-from agent import build_initial_session, run_agent_and_get_reply
+from agent import MODEL, build_initial_session, run_agent_and_get_reply
 from log import get_logger
 
 
+# 生成 socket 日志用的精简文本预览。
 def _preview_text(value, limit=500):
     text = "" if value is None else str(value)
     text = text.replace("\r", "\\r").replace("\n", "\\n")
     return text if len(text) <= limit else text[:limit] + "...(truncated)"
 
 
+# 将请求对象序列化为日志预览文本。
 def _preview_json(value, limit=500):
     try:
         text = json.dumps(value, ensure_ascii=False)
@@ -23,10 +25,12 @@ def _preview_json(value, limit=500):
 
 
 class SessionManager:
+# 初始化内存中的会话存储。
     def __init__(self):
         self._lock = threading.Lock()
         self._sessions: Dict[str, List[dict]] = {}
 
+# 读取指定会话，不存在时自动创建。
     def get(self, session_id: str):
         with self._lock:
             session = self._sessions.get(session_id)
@@ -35,10 +39,12 @@ class SessionManager:
                 self._sessions[session_id] = session
             return session.copy()
 
+# 保存客户端对应的最新会话状态。
     def set(self, session_id: str, session):
         with self._lock:
             self._sessions[session_id] = session.copy()
 
+# 将会话重置为初始状态。
     def reset(self, session_id: str):
         with self._lock:
             self._sessions[session_id] = build_initial_session()
@@ -48,6 +54,7 @@ SESSION_MANAGER = SessionManager()
 
 
 class JsonLineTCPHandler(socketserver.StreamRequestHandler):
+# 持续读取按行分隔的 JSON socket 请求。
     def handle(self):
         logger = get_logger()
         client_addr = f"{self.client_address[0]}:{self.client_address[1]}"
@@ -94,6 +101,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
 
         logger.info("socket client disconnected: {}", client_addr)
 
+# 处理一条原始请求并回写 JSON 响应。
     def _process_and_respond(self, client_addr: str, raw: bytes):
         logger = get_logger()
         logger.info("socket raw request from {}: {}", client_addr, _preview_text(raw.decode("utf-8", errors="replace")))
@@ -113,11 +121,16 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write((json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8"))
         self.wfile.flush()
 
+# 分发 socket 请求到对应的 agent 行为。
     def process_request(self, request: dict):
         logger = get_logger()
         action = request.get("action", "chat")
         session_id = str(request.get("session_id") or "default")
         logger.info("process request action={}, session_id={}", action, session_id)
+
+        if action == "ping":
+            logger.info("heartbeat received for session {}", session_id)
+            return {"ok": True, "action": "pong", "model": MODEL, "session_id": session_id}
 
         if action == "reset":
             SESSION_MANAGER.reset(session_id)
@@ -154,6 +167,7 @@ class JsonLineTCPHandler(socketserver.StreamRequestHandler):
         }
 
 
+# 启动 JSON 行协议的 TCP 服务。
 def main():
     parser = argparse.ArgumentParser(description="JSON socket server for agent_for_minecraft")
     parser.add_argument("--host", default="127.0.0.1")

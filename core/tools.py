@@ -9,6 +9,7 @@ from log import get_logger
 WORKDIR = os.getcwd()
 logger = get_logger("tools")
 
+# 构造统一格式的工具错误返回。
 def _err(tool: str, e: Exception, **extra) -> Dict[str, Any]:
     # 统一错误返回结构：不抛异常，返回给 agent
     msg = f"{type(e).__name__}: {e}"
@@ -20,6 +21,7 @@ def _err(tool: str, e: Exception, **extra) -> Dict[str, Any]:
     
     return {"ok": False, "output": f"[{tool}] {msg}"}
 
+# 将工具文本输出规范化为安全的 UTF-8。
 def _sanitize_text(s: Any) -> str:
     # 防止 surrogate/非法字符导致 UnicodeEncodeError
     if s is None:
@@ -28,6 +30,7 @@ def _sanitize_text(s: Any) -> str:
         s = str(s)
     return s.encode("utf-8", "replace").decode("utf-8")
 
+# 将路径限制在工作目录内并阻止越界。
 def _safe(path: str, base: str = WORKDIR) -> str:
     """把相对路径转成绝对路径，并阻止路径穿越（例如 ../../windows/system32）。"""
     try:
@@ -41,6 +44,7 @@ def _safe(path: str, base: str = WORKDIR) -> str:
         logger.error("路径安全检查失败: {}, base={}", str(e), base)
         raise
 
+# 在大小限制内读取工作区文件。
 def read_file(path: str, max_bytes: int = 120_000):
     try:
         p = _safe(path)
@@ -61,6 +65,7 @@ def read_file(path: str, max_bytes: int = 120_000):
     except Exception as e:
         return _err("read_file", e, path=path, max_bytes=max_bytes)
 
+# 将文本内容写入工作区文件。
 def write_file(path: str, content: str):
     try:
         p = _safe(path)
@@ -77,6 +82,7 @@ def write_file(path: str, content: str):
     except Exception as e:
         return _err("write_file", e, path=path)
 
+# 在工作目录中执行 shell 命令。
 def run_cmd(cmd: str, timeout_sec: int = 60):
     try:
         logger.debug("执行命令: {}, 超时: {} 秒", cmd, timeout_sec)
@@ -105,6 +111,7 @@ def run_cmd(cmd: str, timeout_sec: int = 60):
     except Exception as e:
         return _err("run_cmd", e, cmd=cmd, timeout_sec=timeout_sec)
 
+# 使用 ripgrep 搜索文本并截断过长结果。
 def rg_search(query: str, path: str = ".", max_lines: int = 200):
     try:
         # 先确保 path 合法（防穿越）
@@ -130,6 +137,7 @@ def rg_search(query: str, path: str = ".", max_lines: int = 200):
     except Exception as e:
         return _err("rg_search", e, query=query, path=path, max_lines=max_lines)
 
+# 按行号读取指定范围的文件内容。
 def read_file_lines(path: str, start_line: int = 0, max_lines: int = 200):
     try:
         p = _safe(path)
@@ -169,6 +177,7 @@ def read_file_lines(path: str, start_line: int = 0, max_lines: int = 200):
     except Exception as e:
         return _err("read_file_lines", e, path=path, start_line=start_line, max_lines=max_lines)
 
+# 将文件或目录复制到新位置。
 def copy_file(src: str, dst: str, overwrite: bool = False):
     src_p = Path(src)
     dst_p = Path(dst)
@@ -183,7 +192,7 @@ def copy_file(src: str, dst: str, overwrite: bool = False):
     if dst_p.exists():
         if not overwrite:
             return {"ok": False, "error": f"dst already exists: {str(dst_p)}"}
-        # overwrite=True: 先删除目标
+        # 如果允许覆盖，先删除目标。
         if dst_p.is_dir():
             shutil.rmtree(dst_p)
         else:
@@ -191,10 +200,10 @@ def copy_file(src: str, dst: str, overwrite: bool = False):
 
     try:
         if src_p.is_dir():
-            # Python 3.8+：dirs_exist_ok 允许覆盖，但我们前面已经清理了
+            # 在 Python 3.8+ 中，dirs_exist_ok 支持覆盖，但这里已提前清理目标。
             shutil.copytree(src_p, dst_p)
         else:
-            # copy2 会尽量保留时间戳等元数据
+            # 复制时会尽量保留时间戳等元数据。
             dst_p.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_p, dst_p)
 
@@ -202,6 +211,7 @@ def copy_file(src: str, dst: str, overwrite: bool = False):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# 将文件或目录移动到新位置。
 def move_file(src: str, dst: str, overwrite: bool = False):
     src_p = Path(src)
     dst_p = Path(dst)
@@ -216,7 +226,7 @@ def move_file(src: str, dst: str, overwrite: bool = False):
     if dst_p.exists():
         if not overwrite:
             return {"ok": False, "error": f"dst already exists: {str(dst_p)}"}
-        # overwrite=True: 先删除目标
+        # 如果允许覆盖，先删除目标。
         if dst_p.is_dir():
             shutil.rmtree(dst_p)
         else:
@@ -236,6 +246,7 @@ def move_file(src: str, dst: str, overwrite: bool = False):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# 删除文件或目录。
 def delete_file(path: str):
     """删除文件或目录"""
     try:
@@ -257,6 +268,7 @@ def delete_file(path: str):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# 递归创建目录树。
 def mkdir_p(path: str):
     """创建目录，如果父目录不存在也会创建（类似 mkdir -p）"""
     try:
@@ -272,6 +284,7 @@ def mkdir_p(path: str):
     except Exception as e:
         return {"ok": False, "error": repr(e)}
 
+# 按排序结果列出目录项。
 def list_dir(path: str = "."):
     """列出某个目录下的文件/文件夹（返回按字母排序的列表）。"""
     try:
@@ -286,6 +299,7 @@ def list_dir(path: str = "."):
     except Exception as e:
         return _err("list_dir", e, path=path)
 
+# 使用 Python 正则递归搜索文件内容。
 def grep_text(pattern: str, path: str = ".", max_matches: int = 50):
     """
     在 path 目录下递归搜索文本 pattern，返回匹配的文件与行号（最多 max_matches 条）。

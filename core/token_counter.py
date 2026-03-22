@@ -1,8 +1,12 @@
-import tiktoken
+try:
+    import tiktoken
+except ImportError:
+    tiktoken = None
 
 _TOKEN_ENCODINGS = {}
 
 
+# 返回指定模型对应的缓存 tokenizer。
 def get_token_encoding(model: str):
     if tiktoken is None:
         raise RuntimeError("tiktoken is not installed")
@@ -20,10 +24,10 @@ def get_token_encoding(model: str):
     return encoding
 
 
+# 使用 tiktoken 或回退规则估算 token 数量。
 def estimate_tokens(text: str, model: str) -> int:
     """
-    估算文本 token 数量。
-    优先使用 tiktoken，失败时回退启发式估算。
+    Estimate token usage with tiktoken when available, and fall back to a heuristic otherwise.
     """
     if not text:
         return 0
@@ -39,6 +43,7 @@ def estimate_tokens(text: str, model: str) -> int:
         return max(1, int(tokens + 0.5))
 
 
+# 估算单条消息负载的 token 成本。
 def count_message_tokens(message: dict, model: str) -> int:
     tokens = 0
 

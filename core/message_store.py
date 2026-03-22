@@ -1,10 +1,12 @@
 from core.token_counter import count_message_tokens
 
 
+# 统计当前历史中非 system 消息的 token 总数。
 def calc_total_tokens(messages, model: str):
     return sum(count_message_tokens(m, model) for m in messages if m.get("role") != "system")
 
 
+# 在 token 预算内保留最近的消息窗口。
 def trim_messages(messages, keep_last, model: str, cached_total_tokens=None, return_total=False):
     if cached_total_tokens is not None and cached_total_tokens <= keep_last:
         return (messages, cached_total_tokens) if return_total else messages
@@ -57,6 +59,7 @@ def trim_messages(messages, keep_last, model: str, cached_total_tokens=None, ret
     return (trimmed, total) if return_total else trimmed
 
 
+# 追加一条消息，并在需要时裁剪历史。
 def append_message(messages, message, total_tokens, keep_last, model: str, auto_trim=False):
     messages.append(message)
     if message.get("role") != "system":
